@@ -30,11 +30,13 @@ map, but for foot traffic.
 This repo currently contains an **interactive HTML/JS UI mockup** (`mockup/lobby-heatmap-mockup.html`)
 used to work out the interaction design before writing the Python backend. It runs entirely
 client-side with a simulated occupancy model standing in for real camera/detector input —
-open it directly in a browser, no server required. The base image it renders is a real sample
-photo (`mockup/source/sample-01/baseImage/mybase.jpg`), inlined into the HTML.
+open it directly in a browser, no server required. The base image it renders is a stylized
+illustrated scene, drawn on a canvas — a real sample photo was tried
+(`mockup/source/sample-01/baseImage/mybase.jpg`) but swapped back out for now; that photo is
+kept on disk as sample data for the real system.
 
 The mockup demonstrates:
-- Live heatmap rendered over the captured base photo, with smooth accumulate/decay (no raw
+- Live heatmap rendered over the captured base scene, with smooth accumulate/decay (no raw
   frame-diff jitter)
 - A "people in frame" sparkline (per-frame headcount over time) as a smooth line + area chart,
   synced to the replay scrubber
@@ -103,7 +105,7 @@ together:
 mockup/
   lobby-heatmap-mockup.html         # interactive UI mockup, open directly in a browser
   source/sample-01/
-    baseImage/mybase.jpg            # sample base photo, embedded into the mockup
+    baseImage/mybase.jpg            # sample base photo (not currently embedded in the mockup)
     logPicture/                     # (empty — sample layout for reference photos)
     log/                            # (empty — sample layout for heatmapLog files)
 ```
