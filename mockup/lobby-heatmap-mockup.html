@@ -1,0 +1,1346 @@
+<meta charset="utf-8">
+<title>Lobby Heatmap Console — UI Mockup</title>
+<style>
+  :root {
+    --bg: #0e131a;
+    --panel: #161d27;
+    --panel-raised: #1c2530;
+    --line: #29323e;
+    --line-soft: #1f2731;
+    --text: #e7ecf2;
+    --text-dim: #8b96a6;
+    --text-faint: #5b6675;
+    --accent: #ff9248;
+    --accent-dim: #ff92481a;
+    --live: #ef5350;
+    --ok: #3ddc84;
+    --warn: #ffcc4d;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+    --sans: -apple-system, "Segoe UI", "Inter", Roboto, Helvetica, Arial, sans-serif;
+  }
+  :root[data-theme="light"] {
+    --bg: #f4f5f7;
+    --panel: #ffffff;
+    --panel-raised: #fbfbfc;
+    --line: #dde1e7;
+    --line-soft: #e8eaee;
+    --text: #171b21;
+    --text-dim: #5b6675;
+    --text-faint: #8b96a6;
+    --accent: #d9700c;
+    --accent-dim: #d9700c14;
+    --live: #d63a34;
+    --ok: #17944f;
+    --warn: #a97300;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f4f5f7;
+      --panel: #ffffff;
+      --panel-raised: #fbfbfc;
+      --line: #dde1e7;
+      --line-soft: #e8eaee;
+      --text: #171b21;
+      --text-dim: #5b6675;
+      --text-faint: #8b96a6;
+      --accent: #d9700c;
+      --accent-dim: #d9700c14;
+      --live: #d63a34;
+      --ok: #17944f;
+      --warn: #a97300;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.45;
+  }
+  .app {
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    min-height: 100vh;
+  }
+
+  /* ---------- Top bar ---------- */
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--line);
+    background: var(--panel);
+  }
+  .device {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .device-name {
+    font-weight: 600;
+    font-size: 15px;
+    letter-spacing: 0.01em;
+  }
+  .device-id {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--text-faint);
+  }
+  .topbar-spacer { flex: 1; }
+  .status-pill {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 12px;
+    border-radius: 100px;
+    border: 1px solid var(--line);
+    background: var(--panel-raised);
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+  }
+  .status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--text-faint);
+  }
+  .status-pill.on .status-dot { background: var(--live); box-shadow: 0 0 0 3px var(--accent-dim); }
+  .status-pill.on { color: var(--live); border-color: color-mix(in srgb, var(--live) 35%, var(--line)); }
+  @media (prefers-reduced-motion: no-preference) {
+    .status-pill.on .status-dot { animation: pulse 1.8s ease-in-out infinite; }
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+  .stat-readout {
+    display: flex;
+    gap: 16px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--text-faint);
+    font-variant-numeric: tabular-nums;
+  }
+  .stat-readout b { color: var(--text-dim); font-weight: 500; }
+
+  /* ---------- Main layout ---------- */
+  .main {
+    display: grid;
+    grid-template-columns: 1fr;
+    overflow: hidden;
+  }
+  .viewport-col {
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+  }
+  .viewport-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .seg {
+    display: inline-flex;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 2px;
+    background: var(--panel-raised);
+    gap: 2px;
+  }
+  .seg button {
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: var(--text-dim);
+    font-family: var(--sans);
+    font-size: 12.5px;
+    font-weight: 600;
+    padding: 6px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    letter-spacing: 0.02em;
+  }
+  .seg button.active {
+    background: var(--accent);
+    color: #1a0f04;
+  }
+  :root[data-theme="light"] .seg button.active,
+  @media (prefers-color-scheme: light) { .seg button.active { color: #fff; } }
+  .seg button:focus-visible, button:focus-visible, select:focus-visible, input:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .viewport-toolbar .kbd-hint {
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-faint);
+  }
+  kbd {
+    font-family: var(--mono);
+    background: var(--panel-raised);
+    border: 1px solid var(--line);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-size: 10.5px;
+    color: var(--text-dim);
+  }
+
+  .stage {
+    position: relative;
+    flex: 1;
+    margin: 16px;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    background: #05070a;
+    min-height: 420px;
+  }
+  canvas#heat { width: 100%; height: 100%; display: block; }
+  .stage-badge {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px 4px 8px;
+    border-radius: 100px;
+    background: rgba(10, 13, 18, 0.72);
+    backdrop-filter: blur(4px);
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.05em;
+    color: #fff;
+    text-transform: uppercase;
+  }
+  .stage-badge .status-dot { background: var(--live); }
+  .stage-window {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    color: rgba(255,255,255,0.85);
+    background: rgba(10, 13, 18, 0.72);
+    padding: 4px 10px;
+    border-radius: 100px;
+    text-transform: uppercase;
+  }
+  .stage-timestamp {
+    position: absolute;
+    bottom: 12px;
+    left: 12px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: rgba(255,255,255,0.85);
+    background: rgba(10, 13, 18, 0.72);
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-variant-numeric: tabular-nums;
+  }
+  .stage-legend {
+    position: absolute;
+    bottom: 12px;
+    right: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(10, 13, 18, 0.72);
+    padding: 6px 10px;
+    border-radius: 8px;
+  }
+  .legend-bar {
+    width: 90px;
+    height: 6px;
+    border-radius: 3px;
+    background: linear-gradient(90deg, #1a1f6b, #2f6fd1, #3ddc84, #ffcc4d, #ff5a3d);
+  }
+  .legend-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: rgba(255,255,255,0.7);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  /* ---------- Replay scrubber ---------- */
+  .scrubber {
+    display: none;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 16px 16px;
+  }
+  .scrubber.visible { display: flex; }
+  .play-btn {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: 1px solid var(--line);
+    background: var(--panel-raised);
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .play-btn:hover { border-color: var(--accent); }
+  .scrub-track-wrap { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+  input[type="range"].scrub {
+    width: 100%;
+    accent-color: var(--accent);
+    height: 4px;
+  }
+  .scrub-ticks {
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--text-faint);
+    font-variant-numeric: tabular-nums;
+  }
+  .speed-select {
+    width: auto;
+    flex: 0 0 auto;
+    font-family: var(--mono);
+    font-size: 11.5px;
+  }
+
+  /* ---------- Right rail ---------- */
+  .rail {
+    background: var(--panel);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  .rail-section {
+    padding: 16px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .rail-section h3 {
+    margin: 0 0 12px;
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-faint);
+  }
+
+  .base-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+  .base-thumb {
+    width: 56px;
+    height: 42px;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    background:
+      repeating-linear-gradient(45deg, var(--panel-raised), var(--panel-raised) 4px, var(--bg) 4px, var(--bg) 8px);
+    flex-shrink: 0;
+    position: relative;
+    overflow: hidden;
+  }
+  .base-thumb.captured {
+    background: linear-gradient(160deg, #23303f, #141b23 70%);
+  }
+  .base-thumb.captured::after {
+    content: "✓";
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--ok);
+    font-size: 15px;
+    font-weight: 700;
+  }
+  .base-meta { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+  .base-meta .label { font-size: 12.5px; font-weight: 600; }
+  .base-meta .ts { font-family: var(--mono); font-size: 11px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+
+  button.primary {
+    width: 100%;
+    margin-top: 10px;
+    padding: 9px 12px;
+    border-radius: 7px;
+    border: 1px solid transparent;
+    background: var(--accent);
+    color: #1a0f04;
+    font-weight: 700;
+    font-size: 12.5px;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+  }
+  @media (prefers-color-scheme: light) { button.primary { color: #fff; } }
+  :root[data-theme="light"] button.primary { color: #fff; }
+  button.primary:active { transform: translateY(1px); }
+
+  .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+  .field:last-child { margin-bottom: 0; }
+  .field label { font-size: 12.5px; color: var(--text-dim); display: flex; justify-content: space-between; }
+  .field label .val { font-family: var(--mono); color: var(--text); font-variant-numeric: tabular-nums; }
+  select, input[type="datetime-local"] {
+    width: 100%;
+    background: var(--panel-raised);
+    border: 1px solid var(--line);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 7px 9px;
+    font-size: 12.5px;
+    font-family: var(--sans);
+  }
+  .custom-range { display: none; gap: 8px; margin-top: 4px; }
+  .custom-range.visible { display: grid; grid-template-columns: 1fr 1fr; }
+  input[type="range"] { width: 100%; accent-color: var(--accent); }
+
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; }
+  .switch { position: relative; display: inline-block; width: 36px; height: 20px; flex-shrink: 0; cursor: pointer; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider-toggle {
+    position: absolute; inset: 0; background: var(--line);
+    border-radius: 100px; cursor: pointer; transition: background .15s;
+  }
+  .slider-toggle::before {
+    content: ""; position: absolute; width: 16px; height: 16px; left: 2px; top: 2px;
+    background: var(--panel); border-radius: 50%; transition: transform .15s;
+  }
+  .switch input:checked + .slider-toggle { background: var(--accent); }
+  .switch input:checked + .slider-toggle::before { transform: translateX(16px); background: #1a0f04; }
+
+  .shortcuts { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; font-size: 12px; }
+  .shortcuts .keys { display: flex; gap: 3px; }
+  .shortcuts .desc { color: var(--text-dim); }
+
+  .toast {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%) translateY(8px);
+    background: var(--panel-raised);
+    border: 1px solid var(--line);
+    color: var(--text);
+    padding: 9px 16px;
+    border-radius: 8px;
+    font-size: 12.5px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .2s, transform .2s;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  .sparkline-panel {
+    padding: 10px 16px 14px;
+    border-top: 1px solid var(--line-soft);
+  }
+  .sparkline-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  .sparkline-label {
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-faint);
+  }
+  .sparkline-value {
+    font-family: var(--mono);
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+  .sparkline-value .unit {
+    font-size: 11px;
+    color: var(--text-faint);
+    font-weight: 500;
+    margin-left: 4px;
+  }
+  #sparkline { width: 100%; height: 56px; display: block; }
+
+  .icon-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--panel-raised);
+    color: var(--text-dim);
+    font-size: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .icon-btn:hover { color: var(--text); border-color: var(--accent); }
+
+  .settings-view { display: none; }
+  .settings-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 18px 24px 0;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+  .back-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 6px 4px;
+  }
+  .back-btn:hover { color: var(--accent); }
+  .settings-header h2 { margin: 0; font-size: 16px; font-weight: 700; }
+  .settings-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 16px;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 20px 24px 32px;
+  }
+  .settings-card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 20px;
+  }
+  .settings-card h3 {
+    margin: 0 0 14px;
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-faint);
+  }
+  .settings-card .primary { margin-top: 10px; }
+  .field-hint {
+    font-size: 11.5px;
+    color: var(--text-faint);
+    margin-top: 6px;
+    line-height: 1.5;
+  }
+
+  .bottombar {
+    padding: 8px 20px;
+    border-top: 1px solid var(--line);
+    background: var(--panel);
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-faint);
+    display: flex;
+    justify-content: space-between;
+  }
+
+</style>
+
+<div class="app">
+  <header class="topbar">
+    <div class="device">
+      <span class="device-name">Lobby Camera — Cam 01</span>
+      <span class="device-id">rpi-cam · 192.168.1.42 · uptime 4d 02h</span>
+    </div>
+    <div class="topbar-spacer"></div>
+    <div class="stat-readout">
+      <span><b id="fpsVal">8.0</b> fps</span>
+      <span><b id="cpuVal">52</b>°C</span>
+      <span><b id="confVal">78</b>% avg conf</span>
+    </div>
+    <div class="status-pill on" id="statusPill">
+      <span class="status-dot"></span>
+      <span id="statusText">Live</span>
+    </div>
+    <button class="icon-btn" id="gearBtn" aria-label="Settings" title="Settings">⚙</button>
+  </header>
+
+  <div class="main" id="dashboardView">
+    <section class="viewport-col">
+      <div class="viewport-toolbar">
+        <div class="seg" role="group" aria-label="View mode">
+          <button class="active" id="modeLiveBtn" aria-pressed="true">Live</button>
+          <button id="modeReplayBtn" aria-pressed="false">Replay</button>
+        </div>
+        <span class="kbd-hint"><kbd>L</kbd> live &nbsp; <kbd>R</kbd> replay &nbsp; <kbd>Space</kbd> start/stop</span>
+      </div>
+
+      <div class="stage">
+        <canvas id="heat" width="960" height="540"></canvas>
+        <div class="stage-badge"><span class="status-dot"></span><span id="stageBadgeText">Live</span></div>
+        <div class="stage-window" id="stageWindow">Accumulated · last 3h</div>
+        <div class="stage-timestamp" id="stageClock">2026-07-25 14:32:07</div>
+        <div class="stage-legend">
+          <span class="legend-label">Low</span>
+          <span class="legend-bar"></span>
+          <span class="legend-label">High</span>
+        </div>
+      </div>
+
+      <div class="sparkline-panel">
+        <div class="sparkline-head">
+          <span class="sparkline-label">People in frame</span>
+          <span class="sparkline-value"><span id="peopleNowVal">6</span><span class="unit">detections, this frame</span></span>
+        </div>
+        <canvas id="sparkline" width="960" height="56"></canvas>
+      </div>
+
+      <div class="scrubber" id="scrubber">
+        <button class="play-btn" id="playBtn" aria-label="Play">▶</button>
+        <div class="scrub-track-wrap">
+          <input type="range" class="scrub" id="scrubRange" min="0" max="100" value="35">
+          <div class="scrub-ticks">
+            <span id="scrubStart">11:30</span>
+            <span id="scrubNow">13:15</span>
+            <span id="scrubEnd">14:30</span>
+          </div>
+        </div>
+        <select class="speed-select" id="speedSelect">
+          <option value="1">1×</option>
+          <option value="4" selected>4×</option>
+          <option value="15">15×</option>
+          <option value="60">60×</option>
+        </select>
+      </div>
+    </section>
+  </div>
+
+  <div class="settings-view" id="settingsView">
+    <div class="settings-header">
+      <button class="back-btn" id="backToDashboard">← Back to dashboard</button>
+      <h2>Settings</h2>
+    </div>
+    <div class="settings-grid">
+      <section class="settings-card">
+        <h3>Base image</h3>
+        <div class="base-row">
+          <div class="base-thumb captured" id="baseThumb"></div>
+          <div class="base-meta">
+            <span class="label" id="baseLabel">Captured</span>
+            <span class="ts" id="baseTs">Today 08:02:14</span>
+            <span class="ts" id="sessionFolderLabel">session_2026-07-25_08-02-14/</span>
+          </div>
+        </div>
+        <button class="primary" id="captureBtn">Recapture base image</button>
+        <div class="field-hint">Each capture starts a new session folder. The base photo and every frame saved after it live together in that one folder, so a session is easy to find, review, or archive.</div>
+      </section>
+
+      <section class="settings-card">
+        <h3>Session</h3>
+        <div class="field">
+          <label>Time frame <span class="val" id="timeframeVal">3h</span></label>
+          <select id="timeframeSelect">
+            <option value="1">1 hour</option>
+            <option value="3" selected>3 hours (default)</option>
+            <option value="6">6 hours</option>
+            <option value="24">24 hours</option>
+            <option value="custom">Custom range…</option>
+          </select>
+          <div class="custom-range" id="customRange">
+            <input type="datetime-local" id="customFrom">
+            <input type="datetime-local" id="customTo">
+          </div>
+        </div>
+        <div class="field">
+          <label>Detection confidence <span class="val" id="sensVal">45%</span></label>
+          <input type="range" id="sensRange" min="10" max="90" value="45">
+        </div>
+        <div class="field">
+          <label>Image capture interval <span class="val" id="captureIntervalVal">1s</span></label>
+          <select id="captureIntervalSelect">
+            <option value="0.5">0.5 s</option>
+            <option value="1" selected>1 s (default)</option>
+            <option value="2">2 s</option>
+            <option value="5">5 s</option>
+            <option value="10">10 s</option>
+          </select>
+        </div>
+        <div class="field-hint">Detection keeps comparing frames continuously in memory, but only one photo is written to disk per interval. Movement in a lobby rarely needs finer resolution than this, and it keeps the session folder from filling up with near-duplicate frames.</div>
+        <div class="field toggle-row">
+          <label style="margin:0">Save heat log to disk</label>
+          <label class="switch">
+            <input type="checkbox" id="saveToggle" checked>
+            <span class="slider-toggle"></span>
+          </label>
+        </div>
+      </section>
+
+      <section class="settings-card">
+        <h3>Presentation</h3>
+        <div class="field toggle-row">
+          <label style="margin:0">Demo mode</label>
+          <label class="switch">
+            <input type="checkbox" id="demoToggle" checked>
+            <span class="slider-toggle"></span>
+          </label>
+        </div>
+        <div class="field-hint">Shows lively simulated activity regardless of actual room occupancy — turn this on before a live presentation so the heatmap looks populated even in an empty or quiet room. Turn it off to see the real camera feed.</div>
+      </section>
+
+      <section class="settings-card">
+        <h3>Keyboard shortcuts</h3>
+        <div class="shortcuts">
+          <span class="keys"><kbd>B</kbd></span><span class="desc">Capture base image</span>
+          <span class="keys"><kbd>L</kbd></span><span class="desc">Switch to live</span>
+          <span class="keys"><kbd>R</kbd></span><span class="desc">Switch to replay</span>
+          <span class="keys"><kbd>Space</kbd></span><span class="desc">Start / stop capture</span>
+          <span class="keys"><kbd>[</kbd> <kbd>]</kbd></span><span class="desc">Nudge replay time</span>
+          <span class="keys"><kbd>Esc</kbd></span><span class="desc">Close settings</span>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <footer class="bottombar">
+    <span>detector: YOLO11n · class: person · min confidence <span id="threshEcho">45</span>%</span>
+    <span id="footerRight">/var/heatmap/session_2026-07-25_08-02-14/ · 0 frames saved</span>
+  </footer>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  var canvas = document.getElementById('heat');
+  var ctx = canvas.getContext('2d');
+  var W = canvas.width, H = canvas.height;
+
+  // ---------- Base scene: stylized canteen layout (stand-in for the captured photo) ----------
+  var baseCanvas = document.createElement('canvas');
+  baseCanvas.width = W; baseCanvas.height = H;
+  var bctx = baseCanvas.getContext('2d');
+
+  function drawBaseScene() {
+    bctx.fillStyle = '#efe9db';
+    bctx.fillRect(0, 0, W, H);
+
+    var muralH = H * 0.22;
+    bctx.save();
+    bctx.beginPath();
+    bctx.rect(0, 0, W, muralH);
+    bctx.clip();
+    bctx.fillStyle = '#f5f1e6';
+    bctx.fillRect(0, 0, W, muralH);
+    bctx.strokeStyle = '#4fa9c7';
+    bctx.lineWidth = 10;
+    bctx.beginPath();
+    bctx.moveTo(-20, muralH * 0.7);
+    bctx.bezierCurveTo(W * 0.2, muralH * 0.3, W * 0.35, muralH * 1.0, W * 0.6, muralH * 0.5);
+    bctx.bezierCurveTo(W * 0.75, muralH * 0.2, W * 0.9, muralH * 0.6, W + 20, muralH * 0.3);
+    bctx.stroke();
+    bctx.strokeStyle = '#8fc93a';
+    bctx.lineWidth = 16;
+    bctx.beginPath();
+    bctx.moveTo(W * 0.3, -10);
+    bctx.bezierCurveTo(W * 0.55, muralH * 0.4, W * 0.4, muralH * 0.9, W * 0.65, muralH * 0.6);
+    bctx.stroke();
+    bctx.fillStyle = '#f0a6c4';
+    bctx.beginPath();
+    bctx.ellipse(W * 0.58, muralH * 0.55, 26, 16, 0.6, 0, Math.PI * 2);
+    bctx.fill();
+    var dots = [[0.08, 0.3], [0.15, 0.6], [0.5, 0.2], [0.7, 0.75], [0.85, 0.35], [0.93, 0.6]];
+    dots.forEach(function (d, i) {
+      bctx.fillStyle = i % 2 ? '#e8626f' : '#5fb6c9';
+      bctx.beginPath();
+      bctx.arc(W * d[0], muralH * d[1], 6, 0, Math.PI * 2);
+      bctx.fill();
+    });
+    bctx.restore();
+    bctx.strokeStyle = 'rgba(0,0,0,0.06)';
+    bctx.lineWidth = 2;
+    bctx.beginPath(); bctx.moveTo(0, muralH); bctx.lineTo(W, muralH); bctx.stroke();
+
+    bctx.fillStyle = '#dfe6ea';
+    bctx.fillRect(W * 0.02, H * 0.30, W * 0.30, H * 0.10);
+    bctx.fillRect(W * 0.02, H * 0.43, W * 0.30, H * 0.10);
+    bctx.strokeStyle = '#b9c4cc';
+    bctx.lineWidth = 2;
+    bctx.strokeRect(W * 0.02, H * 0.30, W * 0.30, H * 0.10);
+    bctx.strokeRect(W * 0.02, H * 0.43, W * 0.30, H * 0.10);
+
+    var tableRows = [0.42, 0.58, 0.74, 0.90];
+    var tableCols = [0.40, 0.58, 0.76];
+    tableRows.forEach(function (ty) {
+      tableCols.forEach(function (tx) {
+        var tw = W * 0.16, th = H * 0.035;
+        var x = W * tx - tw / 2, y = H * ty - th / 2;
+        bctx.fillStyle = '#e7cf9d';
+        bctx.fillRect(x, y, tw, th);
+        bctx.fillStyle = '#cbb27c';
+        bctx.fillRect(x, y - th * 0.9, tw, th * 0.5);
+        bctx.fillRect(x, y + th * 1.4, tw, th * 0.5);
+      });
+    });
+
+    bctx.fillStyle = '#8a5b8f';
+    bctx.fillRect(W * 0.96, H * 0.30, W * 0.03, H * 0.22);
+    bctx.fillStyle = '#c78a3a';
+    bctx.fillRect(W * 0.96, H * 0.55, W * 0.03, H * 0.18);
+
+    bctx.strokeStyle = 'rgba(0,0,0,0.05)';
+    bctx.lineWidth = 1;
+    for (var gx = 0; gx <= W; gx += H * 0.08) {
+      bctx.beginPath(); bctx.moveTo(gx, muralH); bctx.lineTo(gx, H); bctx.stroke();
+    }
+  }
+  drawBaseScene();
+
+  // ---------- Heat accumulation engine ----------
+  // Low-res grid so individual updates are tiny relative to the whole; heat only
+  // ever changes by small additive deposits plus a slow multiplicative decay —
+  // that's what keeps the rendered transition smooth instead of jumping between states.
+  var GW = 64, GH = 36;
+  function newGrid() { return new Float32Array(GW * GH); }
+
+  function seededRandom(seed) {
+    return function () {
+      seed = (seed * 9301 + 49297) % 233280;
+      return seed / 233280;
+    };
+  }
+
+  function deposit(grid, gx, gy, amount, radius) {
+    var x0 = Math.max(0, Math.floor(gx - radius)), x1 = Math.min(GW - 1, Math.ceil(gx + radius));
+    var y0 = Math.max(0, Math.floor(gy - radius)), y1 = Math.min(GH - 1, Math.ceil(gy + radius));
+    var sigma = radius * 0.55;
+    for (var y = y0; y <= y1; y++) {
+      for (var x = x0; x <= x1; x++) {
+        var dx = x - gx, dy = y - gy, d2 = dx * dx + dy * dy;
+        if (d2 > radius * radius) continue;
+        var w = Math.exp(-d2 / (2 * sigma * sigma));
+        var idx = y * GW + x;
+        grid[idx] = Math.min(1, grid[idx] + amount * w);
+      }
+    }
+  }
+
+  function decay(grid, factor) {
+    for (var i = 0; i < grid.length; i++) grid[i] *= factor;
+  }
+
+  // Zones line up with the counters/tables/entrance drawn in the base scene above.
+  var COUNTERS = [{ x: 6, y: 12 }, { x: 6, y: 17 }];
+  var TABLES = [
+    { x: 24, y: 15, w: 3 }, { x: 35, y: 15, w: 1 }, { x: 46, y: 15, w: 1 },
+    { x: 24, y: 21, w: 2 }, { x: 35, y: 21, w: 1 }, { x: 46, y: 21, w: 1 },
+    { x: 24, y: 27, w: 1 }, { x: 35, y: 27, w: 1 }, { x: 46, y: 27, w: 1 },
+    { x: 24, y: 32, w: 1 }, { x: 35, y: 32, w: 1 }, { x: 46, y: 32, w: 1 }
+  ];
+  var ENTRANCE = { x: 61, y: 15 };
+  var tableWeights = TABLES.reduce(function (s, t) { return s + t.w; }, 0);
+  function pickTable(rnd) {
+    var r = rnd() * tableWeights, acc = 0;
+    for (var i = 0; i < TABLES.length; i++) {
+      acc += TABLES[i].w;
+      if (r <= acc) return TABLES[i];
+    }
+    return TABLES[0];
+  }
+
+  function makeAgent(rnd) {
+    var start = COUNTERS[Math.floor(rnd() * COUNTERS.length)];
+    return {
+      gx: ENTRANCE.x + (rnd() - 0.5), gy: ENTRANCE.y + (rnd() - 0.5),
+      tx: start.x, ty: start.y,
+      state: 'toCounter', dwell: 0, dwellMax: 30
+    };
+  }
+
+  // Each simulated person eases toward its target (never teleports) and leaves a
+  // small, continuous trail of heat — brighter while stopped than while walking.
+  function stepAgent(agent, grid, rnd, scale) {
+    agent.gx += (agent.tx - agent.gx) * 0.035;
+    agent.gy += (agent.ty - agent.gy) * 0.035;
+    var dist = Math.hypot(agent.tx - agent.gx, agent.ty - agent.gy);
+    var dwelling = agent.state === 'atCounter' || agent.state === 'atTable';
+    var amount = (dwelling ? 0.012 : 0.0022) * scale;
+    var radius = dwelling ? 3.1 : 2.2;
+    deposit(grid, agent.gx, agent.gy, amount, radius);
+
+    if (!dwelling && dist < 0.7) {
+      if (agent.state === 'toCounter') {
+        agent.state = 'atCounter'; agent.dwell = 0; agent.dwellMax = 25 + rnd() * 35;
+      } else if (agent.state === 'toTable') {
+        agent.state = 'atTable'; agent.dwell = 0; agent.dwellMax = 70 + rnd() * 110;
+      } else if (agent.state === 'toExit') {
+        agent.state = 'done';
+      }
+    } else if (dwelling) {
+      agent.dwell++;
+      if (agent.dwell > agent.dwellMax) {
+        if (agent.state === 'atCounter') {
+          var table = pickTable(rnd);
+          agent.tx = table.x + (rnd() - 0.5); agent.ty = table.y + (rnd() - 0.5);
+          agent.state = 'toTable';
+        } else {
+          agent.tx = ENTRANCE.x; agent.ty = ENTRANCE.y; agent.state = 'toExit';
+        }
+      }
+    }
+  }
+
+  // Illustrative mapping only — ties the configured window to how long heat lingers.
+  function hoursToTau(hours) { return 420 * hours; }
+
+  var rnd = seededRandom(7);
+  var liveGrid = newGrid();
+  var liveAgents = [];
+  var depositScale = 1;
+  var decayFactor = Math.pow(0.05, 1 / hoursToTau(3));
+  var simTickCount = 0;
+
+  // Stand-in for a lunch-rush occupancy curve — headcount drifts up and down
+  // over time instead of staying fixed, so the sparkline has something to show.
+  // With Demo mode off, this instead represents a real, mostly-quiet raw feed.
+  var demoMode = true;
+  function occupancyTarget(t) {
+    if (!demoMode) {
+      var vq = 1 + Math.max(0, Math.sin(t / 300)) * 1.5;
+      return Math.max(0, Math.min(2, Math.round(vq)));
+    }
+    var v = 5 + 3 * Math.sin(t / 260) + 1.5 * Math.sin(t / 47 + 1.3);
+    return Math.max(1, Math.min(9, Math.round(v)));
+  }
+
+  // One tick = one detection pass: step every tracked person, let finished
+  // visits leave or recycle, spawn new arrivals toward the current target,
+  // and return the resulting headcount for that frame.
+  function simTick(grid, pool, factor) {
+    decay(grid, factor);
+    simTickCount++;
+    pool.forEach(function (a) { stepAgent(a, grid, rnd, depositScale); });
+    var target = occupancyTarget(simTickCount);
+    for (var i = pool.length - 1; i >= 0; i--) {
+      if (pool[i].state === 'done') {
+        if (pool.length > target) {
+          pool.splice(i, 1);
+        } else {
+          var start = COUNTERS[Math.floor(rnd() * COUNTERS.length)];
+          pool[i].gx = ENTRANCE.x + (rnd() - 0.5); pool[i].gy = ENTRANCE.y + (rnd() - 0.5);
+          pool[i].tx = start.x; pool[i].ty = start.y; pool[i].state = 'toCounter';
+        }
+      }
+    }
+    while (pool.length < target && rnd() < 0.4) pool.push(makeAgent(rnd));
+    return pool.length;
+  }
+
+  // Pre-roll a history so Replay has a full window to scrub through, and the
+  // sparkline has a real per-tick headcount series to show on load.
+  var SNAPSHOTS = 30;
+  var LIVE_WINDOW = 900;
+  var snapshots = [];
+  var historyCounts = [];
+  var liveCounts = [];
+  function generateHistory(hours) {
+    var tau = hoursToTau(hours);
+    var factor = Math.pow(0.05, 1 / tau);
+    var totalTicks = Math.min(tau * 2, 3000);
+    var every = Math.max(1, Math.floor(totalTicks / SNAPSHOTS));
+    snapshots = [];
+    historyCounts = [];
+    liveGrid = newGrid();
+    liveAgents = [];
+    simTickCount = 0;
+    for (var t = 0; t < totalTicks; t++) {
+      historyCounts.push(simTick(liveGrid, liveAgents, factor));
+      if (t % every === 0) snapshots.push(liveGrid.slice());
+    }
+    snapshots.push(liveGrid.slice());
+    decayFactor = factor;
+    liveCounts = historyCounts.slice(-LIVE_WINDOW);
+  }
+  generateHistory(3);
+
+  // ---------- Rendering ----------
+  function colorForT(t) {
+    var stops = [
+      [0.00, [26, 31, 107]],
+      [0.35, [47, 111, 209]],
+      [0.6, [61, 220, 132]],
+      [0.8, [255, 204, 77]],
+      [1.0, [255, 90, 61]]
+    ];
+    for (var i = 0; i < stops.length - 1; i++) {
+      var a = stops[i], b = stops[i + 1];
+      if (t >= a[0] && t <= b[0]) {
+        var f = (t - a[0]) / (b[0] - a[0] || 1);
+        return [
+          Math.round(a[1][0] + (b[1][0] - a[1][0]) * f),
+          Math.round(a[1][1] + (b[1][1] - a[1][1]) * f),
+          Math.round(a[1][2] + (b[1][2] - a[1][2]) * f)
+        ];
+      }
+    }
+    return stops[stops.length - 1][1];
+  }
+
+  var gridCanvas = document.createElement('canvas');
+  gridCanvas.width = GW; gridCanvas.height = GH;
+  var gctx = gridCanvas.getContext('2d');
+  var imgData = gctx.createImageData(GW, GH);
+
+  function paintGrid(grid) {
+    var d = imgData.data;
+    for (var i = 0; i < grid.length; i++) {
+      var v = grid[i];
+      var c = colorForT(Math.min(1, v * 1.15));
+      var a = Math.min(235, v * 300);
+      d[i * 4] = c[0]; d[i * 4 + 1] = c[1]; d[i * 4 + 2] = c[2]; d[i * 4 + 3] = v < 0.03 ? 0 : a;
+    }
+    gctx.putImageData(imgData, 0, 0);
+  }
+
+  var scratchGrid = newGrid();
+  function lerpGrids(a, b, f) {
+    for (var i = 0; i < a.length; i++) scratchGrid[i] = a[i] + (b[i] - a[i]) * f;
+    return scratchGrid;
+  }
+
+  // ---------- Sparkline: per-frame headcount alongside the accumulated heatmap ----------
+  var sparkCanvas = document.getElementById('sparkline');
+  var sctx = sparkCanvas.getContext('2d');
+  var SPARK_W = sparkCanvas.width, SPARK_H = sparkCanvas.height;
+  var peopleNowVal = document.getElementById('peopleNowVal');
+
+  function hexToRgba(hex, alpha) {
+    hex = hex.replace('#', '');
+    if (hex.length === 3) hex = hex.split('').map(function (c) { return c + c; }).join('');
+    var r = parseInt(hex.substring(0, 2), 16), g = parseInt(hex.substring(2, 4), 16), b = parseInt(hex.substring(4, 6), 16);
+    return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
+  }
+
+  // A smooth line + filled area (not discrete bars) so it reads the same way
+  // whether it's showing 900 scrolling live samples or a full replay window —
+  // bar rectangles at high density shimmer/jitter as they scroll; a path doesn't.
+  function drawSparkline() {
+    var values = mode === 'live' ? liveCounts : historyCounts;
+    var n = values.length;
+    sctx.clearRect(0, 0, SPARK_W, SPARK_H);
+    if (n < 2) { peopleNowVal.textContent = n ? values[0] : 0; return; }
+
+    var playheadIdx = mode === 'live' ? n - 1 : Math.round((Number(scrubRange.value) / 100) * (n - 1));
+    var maxV = 9;
+    for (var i = 0; i < n; i++) maxV = Math.max(maxV, values[i]);
+
+    var cs = getComputedStyle(document.documentElement);
+    var accentColor = (cs.getPropertyValue('--accent') || '#ff9248').trim();
+
+    var padTop = 8, padBottom = 4, innerH = SPARK_H - padTop - padBottom;
+    function xAt(i) { return (i / (n - 1)) * SPARK_W; }
+    function yAt(v) { return padTop + (1 - v / maxV) * innerH; }
+
+    var linePath = new Path2D();
+    linePath.moveTo(xAt(0), yAt(values[0]));
+    for (var j = 1; j < n; j++) {
+      var xPrev = xAt(j - 1), yPrev = yAt(values[j - 1]);
+      var xCur = xAt(j), yCur = yAt(values[j]);
+      linePath.quadraticCurveTo(xPrev, yPrev, (xPrev + xCur) / 2, (yPrev + yCur) / 2);
+    }
+    linePath.lineTo(xAt(n - 1), yAt(values[n - 1]));
+
+    var areaPath = new Path2D(linePath);
+    areaPath.lineTo(SPARK_W, SPARK_H);
+    areaPath.lineTo(0, SPARK_H);
+    areaPath.closePath();
+    var grad = sctx.createLinearGradient(0, 0, 0, SPARK_H);
+    grad.addColorStop(0, hexToRgba(accentColor, 0.32));
+    grad.addColorStop(1, hexToRgba(accentColor, 0.02));
+    sctx.fillStyle = grad;
+    sctx.fill(areaPath);
+
+    sctx.lineWidth = 1.75;
+    sctx.strokeStyle = accentColor;
+    sctx.lineJoin = 'round';
+    sctx.lineCap = 'round';
+    sctx.stroke(linePath);
+
+    var px = xAt(playheadIdx), py = yAt(values[playheadIdx]);
+    if (mode !== 'live') {
+      sctx.strokeStyle = hexToRgba(accentColor, 0.35);
+      sctx.lineWidth = 1;
+      sctx.beginPath();
+      sctx.moveTo(px, padTop);
+      sctx.lineTo(px, SPARK_H);
+      sctx.stroke();
+    }
+    sctx.beginPath();
+    sctx.arc(px, py, 3.2, 0, Math.PI * 2);
+    sctx.fillStyle = accentColor;
+    sctx.fill();
+
+    peopleNowVal.textContent = values[playheadIdx];
+  }
+
+  var mode = 'live';
+
+  function currentGrid() {
+    if (mode === 'live') return liveGrid;
+    var pct = Number(scrubRange.value) / 100;
+    var fpos = pct * (snapshots.length - 1);
+    var i0 = Math.floor(fpos), i1 = Math.min(snapshots.length - 1, i0 + 1);
+    return lerpGrids(snapshots[i0], snapshots[i1], fpos - i0);
+  }
+
+  function render() {
+    ctx.clearRect(0, 0, W, H);
+    ctx.drawImage(baseCanvas, 0, 0);
+    paintGrid(currentGrid());
+    ctx.imageSmoothingEnabled = true;
+    ctx.filter = 'blur(7px)';
+    ctx.globalAlpha = 0.82;
+    ctx.drawImage(gridCanvas, 0, 0, GW, GH, 0, 0, W, H);
+    ctx.filter = 'none';
+    ctx.globalAlpha = 1;
+    drawSparkline();
+  }
+
+  // The simulation runs on its own timer, independent of requestAnimationFrame —
+  // rAF pauses whenever the tab is backgrounded/hidden, which would otherwise
+  // silently freeze occupancy while a presenter is, say, alt-tabbed to slides.
+  setInterval(function () {
+    if (mode !== 'live') return;
+    var count = simTick(liveGrid, liveAgents, decayFactor);
+    liveCounts.push(count);
+    if (liveCounts.length > LIVE_WINDOW) liveCounts.shift();
+  }, 60);
+
+  function tick() {
+    render();
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+
+  // ---------- Mode switching ----------
+  var modeLiveBtn = document.getElementById('modeLiveBtn');
+  var modeReplayBtn = document.getElementById('modeReplayBtn');
+  var statusPill = document.getElementById('statusPill');
+  var statusText = document.getElementById('statusText');
+  var stageBadgeText = document.getElementById('stageBadgeText');
+  var scrubber = document.getElementById('scrubber');
+
+  function setMode(next) {
+    mode = next;
+    var isLive = mode === 'live';
+    modeLiveBtn.classList.toggle('active', isLive);
+    modeReplayBtn.classList.toggle('active', !isLive);
+    modeLiveBtn.setAttribute('aria-pressed', String(isLive));
+    modeReplayBtn.setAttribute('aria-pressed', String(!isLive));
+    statusText.textContent = isLive ? 'Live' : 'Replay';
+    stageBadgeText.textContent = isLive ? 'Live' : 'Replay';
+    statusPill.classList.toggle('on', isLive);
+    scrubber.classList.toggle('visible', !isLive);
+    render();
+  }
+  modeLiveBtn.addEventListener('click', function () { setMode('live'); });
+  modeReplayBtn.addEventListener('click', function () { setMode('replay'); });
+
+  // ---------- Scrubber ----------
+  var scrubRange = document.getElementById('scrubRange');
+  var scrubNow = document.getElementById('scrubNow');
+  var playBtn = document.getElementById('playBtn');
+  var playing = false, playTimer = null;
+
+  function timeLabelForPct(pct) {
+    var startMin = 11 * 60 + 30, endMin = 14 * 60 + 30;
+    var m = Math.round(startMin + (endMin - startMin) * (pct / 100));
+    var h = Math.floor(m / 60), mi = m % 60;
+    return (h < 10 ? '0' : '') + h + ':' + (mi < 10 ? '0' : '') + mi;
+  }
+
+  scrubRange.addEventListener('input', function () {
+    var pct = Number(scrubRange.value);
+    scrubNow.textContent = timeLabelForPct(pct);
+  });
+
+  playBtn.addEventListener('click', function () {
+    playing = !playing;
+    playBtn.textContent = playing ? '⏸' : '▶';
+    playBtn.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+    if (playing) {
+      playTimer = setInterval(function () {
+        var v = Number(scrubRange.value) + 1;
+        if (v > 100) v = 0;
+        scrubRange.value = v;
+        scrubRange.dispatchEvent(new Event('input'));
+      }, 220);
+    } else {
+      clearInterval(playTimer);
+    }
+  });
+
+  // ---------- Base image capture ----------
+  var captureBtn = document.getElementById('captureBtn');
+  var baseTs = document.getElementById('baseTs');
+  var baseLabel = document.getElementById('baseLabel');
+  var toast = document.getElementById('toast');
+
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.classList.add('show');
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(function () { toast.classList.remove('show'); }, 2200);
+  }
+
+  function pad2s(n) { return (n < 10 ? '0' : '') + n; }
+  function nowStamp() {
+    var d = new Date();
+    return 'Today ' + pad2s(d.getHours()) + ':' + pad2s(d.getMinutes()) + ':' + pad2s(d.getSeconds());
+  }
+  function folderStamp(d) {
+    return d.getFullYear() + '-' + pad2s(d.getMonth() + 1) + '-' + pad2s(d.getDate()) +
+      '_' + pad2s(d.getHours()) + '-' + pad2s(d.getMinutes()) + '-' + pad2s(d.getSeconds());
+  }
+
+  // ---------- Session folder + on-disk frame count ----------
+  var sessionFolderLabel = document.getElementById('sessionFolderLabel');
+  var footerRight = document.getElementById('footerRight');
+  var sessionFolder = 'session_2026-07-25_08-02-14';
+  var frameCount = 0;
+  var frameTimer = null;
+
+  function updateFooterPath() {
+    footerRight.textContent = '/var/heatmap/' + sessionFolder + '/ · ' + frameCount + ' frames saved';
+  }
+  updateFooterPath();
+
+  function startFrameTimer(seconds) {
+    if (frameTimer) clearInterval(frameTimer);
+    frameTimer = setInterval(function () {
+      if (mode === 'live') {
+        frameCount++;
+        updateFooterPath();
+      }
+    }, seconds * 1000);
+  }
+  startFrameTimer(1);
+
+  var captureIntervalSelect = document.getElementById('captureIntervalSelect');
+  var captureIntervalVal = document.getElementById('captureIntervalVal');
+  captureIntervalSelect.addEventListener('change', function () {
+    var secs = Number(captureIntervalSelect.value);
+    captureIntervalVal.textContent = secs + 's';
+    startFrameTimer(secs);
+    showToast('Now saving one frame every ' + secs + 's to disk');
+  });
+
+  captureBtn.addEventListener('click', function () {
+    baseLabel.textContent = 'Captured';
+    baseTs.textContent = nowStamp();
+    sessionFolder = 'session_' + folderStamp(new Date());
+    sessionFolderLabel.textContent = sessionFolder + '/';
+    frameCount = 0;
+    updateFooterPath();
+    liveGrid = newGrid();
+    liveAgents = [];
+    liveCounts = [];
+    showToast('Base image captured — new session folder started');
+  });
+
+  // ---------- Settings view ----------
+  var gearBtn = document.getElementById('gearBtn');
+  var backToDashboard = document.getElementById('backToDashboard');
+  var dashboardView = document.getElementById('dashboardView');
+  var settingsView = document.getElementById('settingsView');
+
+  function openSettings() {
+    dashboardView.style.display = 'none';
+    settingsView.style.display = 'block';
+  }
+  function closeSettings() {
+    settingsView.style.display = 'none';
+    dashboardView.style.display = 'grid';
+  }
+  gearBtn.addEventListener('click', openSettings);
+  backToDashboard.addEventListener('click', closeSettings);
+
+  // ---------- Demo mode ----------
+  var demoToggle = document.getElementById('demoToggle');
+  demoToggle.addEventListener('change', function () {
+    demoMode = demoToggle.checked;
+    showToast(demoMode ? 'Demo mode on — showing simulated activity' : 'Demo mode off — showing raw feed');
+  });
+
+  // ---------- Timeframe select ----------
+  var timeframeSelect = document.getElementById('timeframeSelect');
+  var timeframeVal = document.getElementById('timeframeVal');
+  var customRange = document.getElementById('customRange');
+  var stageWindow = document.getElementById('stageWindow');
+  timeframeSelect.addEventListener('change', function () {
+    var v = timeframeSelect.value;
+    customRange.classList.toggle('visible', v === 'custom');
+    timeframeVal.textContent = v === 'custom' ? 'custom' : v + 'h';
+    var hours = v === 'custom' ? 3 : Number(v);
+    generateHistory(hours);
+    stageWindow.textContent = 'Accumulated · last ' + (v === 'custom' ? 'custom range' : v + 'h');
+    scrubRange.value = 100;
+    scrubRange.dispatchEvent(new Event('input'));
+    showToast('Window set to ' + (v === 'custom' ? 'custom range' : v + 'h') + ' — heat log re-windowed');
+  });
+
+  // ---------- Sensitivity ----------
+  var sensRange = document.getElementById('sensRange');
+  var sensVal = document.getElementById('sensVal');
+  var threshEcho = document.getElementById('threshEcho');
+  sensRange.addEventListener('input', function () {
+    sensVal.textContent = sensRange.value + '%';
+    threshEcho.textContent = sensRange.value;
+    var conf = Number(sensRange.value);
+    // Stricter confidence cutoffs mean fewer borderline detections survive to be weighted in.
+    depositScale = 0.5 + (1 - conf / 100) * 1.3;
+  });
+
+  // ---------- Clock + fake stats ----------
+  var stageClock = document.getElementById('stageClock');
+  var fpsVal = document.getElementById('fpsVal');
+  var cpuVal = document.getElementById('cpuVal');
+  var confVal = document.getElementById('confVal');
+
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+  function tickClock() {
+    var d = new Date();
+    stageClock.textContent = d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) +
+      ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds());
+    if (mode === 'live') {
+      fpsVal.textContent = (7.6 + Math.random() * 0.8).toFixed(1);
+      cpuVal.textContent = (50 + Math.round(Math.random() * 6));
+      confVal.textContent = Math.min(99, Number(sensRange.value) + 15 + Math.round(Math.random() * 12));
+    }
+  }
+  tickClock();
+  setInterval(tickClock, 1000);
+
+  // ---------- Keyboard shortcuts ----------
+  window.addEventListener('keydown', function (e) {
+    if (e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT') return;
+    if (e.key === 'Escape') { closeSettings(); return; }
+    if (settingsView.style.display === 'block') return;
+    var k = e.key.toLowerCase();
+    if (k === 'b') { captureBtn.click(); }
+    else if (k === 'l') { setMode('live'); }
+    else if (k === 'r') { setMode('replay'); }
+    else if (k === ' ') { e.preventDefault(); playBtn.click(); }
+  });
+})();
+</script>
