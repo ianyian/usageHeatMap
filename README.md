@@ -17,32 +17,37 @@ map, but for foot traffic.
    position (Gaussian falloff), and the whole grid decays exponentially every tick — the
    same math as a leaky bucket / RC-circuit discharge. This is what makes the heatmap a
    *smoothed, time-windowed density* rather than an instant snapshot: a spot visited
-   repeatedly stays warm; a one-off pass-through fades quickly. The configured time frame
-   (default 3h) controls how fast that decay happens.
+   repeatedly stays warm; a one-off pass-through fades quickly. The configured **time frame**
+   (default 10 minutes; also selectable up to 24h for quieter, low-traffic spaces like a
+   warehouse overnight, where even a brief pass-through should stay visible longer) controls
+   how fast that decay happens.
 4. **Two ways to view it:**
    - **Live** — the heatmap and a "people in frame" sparkline update continuously.
-   - **Replay** — scrub back through the configured time window to see how the space filled
-     up and emptied out over time.
+   - **Replay** — pick a specific hour and scrub through just that hour's data (see below).
 
 ## Current status
 
 This repo currently contains an **interactive HTML/JS UI mockup** (`mockup/lobby-heatmap-mockup.html`)
 used to work out the interaction design before writing the Python backend. It runs entirely
 client-side with a simulated occupancy model standing in for real camera/detector input —
-open it directly in a browser, no server required.
+open it directly in a browser, no server required. The base image it renders is a real sample
+photo (`mockup/source/sample-01/baseImage/mybase.jpg`), inlined into the HTML.
 
 The mockup demonstrates:
-- Live heatmap rendered over a captured base image, with smooth accumulate/decay (no raw
+- Live heatmap rendered over the captured base photo, with smooth accumulate/decay (no raw
   frame-diff jitter)
-- A "people in frame" sparkline (per-frame headcount over time), synced to the replay scrubber
-- Live / Replay mode switching, with a scrubber + playback speed control for replay
+- A "people in frame" sparkline (per-frame headcount over time) as a smooth line + area chart,
+  synced to the replay scrubber
+- Live / Replay mode switching. Replay works **by the hour** — pick an hour from a dropdown
+  (each one standing in for one `heatmapLog_HH.jsonl` file) and scrub within it, with a
+  playback speed control. Cross-hour replay is intentionally out of scope for now, kept simple.
 - A dedicated **Settings** page (gear icon) covering:
   - Base image capture (starts a new session folder each time)
-  - Time frame (1h / 3h / 6h / 24h / custom)
+  - Time frame (10m default / 1h / 3h / 6h / 24h / custom)
   - Detection confidence threshold
-  - Image capture interval (how often a frame gets written to disk — see below)
-  - **Demo mode** — forces lively simulated activity for presentations, regardless of actual
-    room occupancy
+  - Reference image interval (how often a plain photo gets written to disk — see below)
+  - **Presentation**: Demo mode toggle, plus a min–max dual-range slider (1–50) controlling
+    the simulated headcount range while Demo mode is on
   - Save-heat-log-to-disk toggle
 - Keyboard shortcuts (`B` capture base, `L`/`R` live/replay, `Space` start/stop, `[`/`]` nudge
   replay time, `Esc` close settings)
@@ -51,21 +56,37 @@ The Python capture/detection engine has not been started yet.
 
 ## Planned on-disk layout
 
-Detection runs continuously in memory, but only one photo is written to disk per the
-configured capture interval (default 1s) — a lobby doesn't move fast enough to need finer
-resolution, and it keeps the session folder from filling up with near-duplicate frames.
+Two very different things are captured, at two different rates, and neither is derived from
+the other:
+
+- **Reference photos** — a plain JPEG saved every **5 seconds** (configurable) purely for
+  visual context when reviewing a session. Detection itself compares frames continuously in
+  memory at a much faster rate; this interval only controls what gets written to disk, so the
+  folder doesn't fill up with near-duplicate images.
+- **heatmapLog** — the actual extracted heat/motion data (positions + confidence, not images),
+  which is what Replay is built from. Much smaller than images, and purpose-built for
+  presentation rather than storage. **One log file per hour.** When a new hour's log starts,
+  its first record carries over the last state from the previous hour's log, so the heatmap
+  doesn't visually reset at the hour boundary — activity decays continuously, it just happens
+  to be filed into hourly chunks on disk.
+
 Each base-image capture starts a new session folder so a session's photos and logs stay
 together:
 
 ```
 /var/heatmap/
-  session_2026-07-25_08-02-14/
-    base.jpg
-    frame_2026-07-25_08-02-15.jpg
-    frame_2026-07-25_08-02-16.jpg
-    ...
-    heat_log.jsonl      # accumulated heat grid snapshots, for Replay
-    meta.json           # time frame, confidence threshold, capture interval used
+  sample-01/                        # session folder, named on base-image capture
+    baseImage/
+      mybase.jpg
+    logPicture/
+      2026-07-26_08-02-15.jpg       # reference photo, every 5s (default)
+      2026-07-26_08-02-20.jpg
+      ...
+    log/
+      heatmapLog_08.jsonl           # one file per hour; first record continues from
+      heatmapLog_09.jsonl           # the previous hour's last state
+      ...
+    meta.json                       # time frame, confidence threshold, capture interval used
 ```
 
 ## Planned tech stack
@@ -80,5 +101,9 @@ together:
 
 ```
 mockup/
-  lobby-heatmap-mockup.html   # interactive UI mockup, open directly in a browser
+  lobby-heatmap-mockup.html         # interactive UI mockup, open directly in a browser
+  source/sample-01/
+    baseImage/mybase.jpg            # sample base photo, embedded into the mockup
+    logPicture/                     # (empty — sample layout for reference photos)
+    log/                            # (empty — sample layout for heatmapLog files)
 ```
