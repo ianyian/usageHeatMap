@@ -254,6 +254,34 @@ class App:
 
     snapshot_path: Optional[str] = None
 
+    def _handle_key(self, key: int) -> bool:
+        """Keyboard shortcuts (also shown as transparent hints on screen).
+        Returns False when the app should quit."""
+        if key == pygame.K_ESCAPE:
+            if self.view == "settings":
+                self.view = "main"
+                self.save_settings()
+                return True
+            return False
+        if key == pygame.K_b:
+            self.on_button("capture")
+        elif key == pygame.K_l:
+            self.on_button("mode_live")
+        elif key == pygame.K_r:
+            self.on_button("mode_replay")
+        elif key == pygame.K_s:
+            self.view = "settings"
+        elif key == pygame.K_d:
+            self.settings.demo_mode = not self.settings.demo_mode
+            self.ui.flash(f"Demo mode {'ON' if self.settings.demo_mode else 'OFF'}")
+        elif key == pygame.K_SPACE and self.mode == "replay":
+            self.replay_playing = not self.replay_playing
+        elif key == pygame.K_LEFT and self.mode == "replay":
+            self.replay_pos = max(0.0, self.replay_pos - 60)
+        elif key == pygame.K_RIGHT and self.mode == "replay":
+            self.replay_pos = min(HOUR_S, self.replay_pos + 60)
+        return True
+
     def run(self) -> None:
         clock = pygame.time.Clock()
         running = True
@@ -265,12 +293,8 @@ class App:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
-                elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                    if self.view == "settings":
-                        self.view = "main"
-                        self.save_settings()
-                    else:
-                        running = False
+                elif event.type == pygame.KEYDOWN:
+                    running = self._handle_key(event.key)
                 else:
                     self.ui.handle(self, event)
 

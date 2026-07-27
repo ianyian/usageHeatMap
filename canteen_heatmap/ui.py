@@ -1,8 +1,17 @@
-"""Native pygame UI (§5): single screen, no scrolling, no browser.
+"""Native pygame UI (§5): single screen, layered overlays, no browser.
 
-The heatmap and the people-in-frame KPI share one screen — the KPI is a corner chip
-over the heatmap, not a separate section. Replay controls replace the live bottom bar
-rather than stacking. Settings is its own screen (gear), matching the mockup pattern.
+Visual language: dark "glass" panels (translucent, rounded, hairline border) floating
+over the full-bleed camera/heatmap view, so the stream stays maximized. Layers on the
+live screen, bottom to top:
+
+  1. base image (captured backdrop)
+  2. heat overlay
+  3. chart strip — live line chart of detected people per second (last 60 s), with
+     the current headcount as the KPI merged into the same strip
+  4. mode pill, demo badge, control pills, transparent shortcut hints
+
+In replay, the chart strip becomes the hour timeline: the whole hour's headcount as
+a chart, click/drag anywhere on it to seek, with a playhead line.
 Immediate-mode widgets: draw() rebuilds hit rects each frame; handle() tests them.
 """
 import time
@@ -16,19 +25,22 @@ from .config import ENV_PRESETS, REF_INTERVAL_CHOICES, TIME_FRAME_CHOICES
 from .heatmap import render_overlay
 from .replay import HOUR_S
 
-BAR_H = 64
-PAD = 10
+PAD = 14
+STRIP_H = 96          # bottom chart strip
+RADIUS = 14
 
-C_BG = (13, 17, 23)
-# Overlay chips are translucent so they cost as little live-view as possible.
-C_PANEL = (16, 21, 27, 150)
-C_PANEL_SOLID = (22, 28, 36, 235)
-C_TEXT = (225, 232, 240)
-C_FAINT = (140, 152, 165)
-C_ACCENT = (64, 156, 255)
-C_OK = (63, 185, 121)
-C_WARN = (240, 180, 60)
-C_LINE = (52, 62, 74)
+C_BG = (11, 15, 21)
+C_GLASS = (10, 14, 22, 158)          # translucent panel fill
+C_GLASS_SOLID = (17, 22, 30, 236)    # settings cards
+C_EDGE = (255, 255, 255, 26)         # hairline border
+C_TEXT = (235, 240, 246)
+C_FAINT = (148, 160, 174)
+C_GHOST = (255, 255, 255, 90)        # transparent hint text
+C_ACCENT = (77, 163, 255)
+C_ACCENT_DIM = (77, 163, 255, 60)
+C_OK = (74, 222, 128)
+C_WARN = (251, 191, 36)
+C_DANGER = (248, 113, 113)
 
 
 def cover_fit(frame_bgr: np.ndarray, w: int, h: int) -> pygame.Surface:
@@ -58,9 +70,12 @@ class UI:
         pygame.display.set_caption("canteenHeatMap")
         self.w, self.h = w, h
         self.screen = pygame.display.set_mode((w, h))
-        self.font = pygame.font.SysFont("menlo,dejavusansmono,monospace", 15)
-        self.font_small = pygame.font.SysFont("menlo,dejavusansmono,monospace", 12)
-        self.font_big = pygame.font.SysFont("menlo,dejavusansmono,monospace", 34, bold=True)
+        base = "avenirnext,helveticaneue,segoeui,dejavusans,arial"
+        self.font = pygame.font.SysFont(base, 16)
+        self.font_sm = pygame.font.SysFont(base, 13)
+        self.font_label = pygame.font.SysFont(base, 12, bold=True)
+        self.font_big = pygame.font.SysFont(base, 42, bold=True)
+        self.font_h1 = pygame.font.SysFont(base, 26, bold=True)
         self._buttons: List[Tuple[pygame.Rect, str]] = []
         self._sliders: List[Tuple[pygame.Rect, str, float, float]] = []
         self._drag: Optional[str] = None
@@ -72,52 +87,75 @@ class UI:
         self._flash = (msg, time.time() + 2.5)
 
     def _text(self, s, font, color, pos, anchor="topleft"):
-        img = font.render(s, True, color)
+        img = font.render(s, True, color[:3])
+        if len(color) == 4:  # emulate alpha for ghost text
+            img.set_alpha(color[3])
         r = img.get_rect(**{anchor: pos})
         self.screen.blit(img, r)
         return r
 
-    def _panel(self, rect: pygame.Rect, color=C_PANEL):
+    def _glass(self, rect: pygame.Rect, fill=C_GLASS, radius=RADIUS, edge=True):
         s = pygame.Surface(rect.size, pygame.SRCALPHA)
-        pygame.draw.rect(s, color, s.get_rect(), border_radius=10)
+        pygame.draw.rect(s, fill, s.get_rect(), border_radius=radius)
+        if edge:
+            pygame.draw.rect(s, C_EDGE, s.get_rect(), 1, border_radius=radius)
         self.screen.blit(s, rect)
 
-    def _button(self, rect: pygame.Rect, label: str, bid: str, active=False,
-                color=None):
-        self._panel(rect, (38, 48, 60, 170) if not active else (31, 61, 94, 210))
-        pygame.draw.rect(self.screen, C_ACCENT if active else C_LINE, rect, 1,
-                         border_radius=10)
-        self._text(label, self.font, color or (C_TEXT if active else C_FAINT),
+    def _pill(self, rect: pygame.Rect, label: str, bid: str, active=False,
+              accent=False):
+        radius = rect.h // 2
+        if active or accent:
+            fill = (31, 76, 128, 235) if active else (38, 48, 62, 200)
+        else:
+            fill = (20, 26, 35, 165)
+        s = pygame.Surface(rect.size, pygame.SRCALPHA)
+        pygame.draw.rect(s, fill, s.get_rect(), border_radius=radius)
+        pygame.draw.rect(s, (C_ACCENT if active else C_EDGE[:3]) + ((150,) if active else (C_EDGE[3],)),
+                         s.get_rect(), 1, border_radius=radius)
+        self.screen.blit(s, rect)
+        self._text(label, self.font_sm, C_TEXT if active else C_FAINT,
                    rect.center, "center")
         self._buttons.append((rect, bid))
 
     def _slider(self, rect: pygame.Rect, sid: str, value: float, lo: float, hi: float,
                 label: str, fmt: str):
-        self._text(label, self.font, C_FAINT, (rect.x, rect.y - 22))
-        self._text(fmt, self.font, C_TEXT, (rect.right, rect.y - 22), "topright")
+        self._text(label, self.font_sm, C_FAINT, (rect.x, rect.y - 20))
+        self._text(fmt, self.font_sm, C_TEXT, (rect.right, rect.y - 20), "topright")
         track = pygame.Rect(rect.x, rect.centery - 2, rect.w, 4)
-        pygame.draw.rect(self.screen, C_LINE, track, border_radius=2)
+        pygame.draw.rect(self.screen, (44, 54, 66), track, border_radius=2)
         t = (value - lo) / (hi - lo)
-        fill = pygame.Rect(rect.x, rect.centery - 2, int(rect.w * t), 4)
-        pygame.draw.rect(self.screen, C_ACCENT, fill, border_radius=2)
+        pygame.draw.rect(self.screen, C_ACCENT,
+                         pygame.Rect(rect.x, rect.centery - 2, int(rect.w * t), 4),
+                         border_radius=2)
         knob = (rect.x + int(rect.w * t), rect.centery)
-        pygame.draw.circle(self.screen, C_TEXT, knob, 9)
-        self._sliders.append((rect.inflate(0, 24), sid, lo, hi))
+        pygame.draw.circle(self.screen, C_TEXT, knob, 8)
+        pygame.draw.circle(self.screen, C_ACCENT, knob, 8, 2)
+        self._sliders.append((rect.inflate(0, 26), sid, lo, hi))
 
-    def _sparkline(self, rect: pygame.Rect, values: List[int]):
-        if len(values) < 2:
-            return
-        vmax = max(4, max(values))
-        pts = [
-            (rect.x + i * rect.w / (len(values) - 1),
-             rect.bottom - (v / vmax) * rect.h)
-            for i, v in enumerate(values)
-        ]
-        area = [(rect.x, rect.bottom)] + pts + [(rect.right, rect.bottom)]
-        s = pygame.Surface(self.screen.get_size(), pygame.SRCALPHA)
-        pygame.draw.polygon(s, (64, 156, 255, 45), area)
-        self.screen.blit(s, (0, 0))
-        pygame.draw.aalines(self.screen, C_ACCENT, False, pts)
+    def _chart(self, rect: pygame.Rect, values: List[int], playhead: Optional[float],
+               vmax_floor: int = 4):
+        """Area + line chart inside rect; playhead is 0..1 across the width."""
+        if len(values) >= 2:
+            vmax = max(vmax_floor, max(values))
+            pts = [
+                (rect.x + i * rect.w / (len(values) - 1),
+                 rect.bottom - 4 - (v / vmax) * (rect.h - 10))
+                for i, v in enumerate(values)
+            ]
+            s = pygame.Surface(self.screen.get_size(), pygame.SRCALPHA)
+            pygame.draw.polygon(
+                s, C_ACCENT_DIM,
+                [(rect.x, rect.bottom)] + pts + [(pts[-1][0], rect.bottom)],
+            )
+            self.screen.blit(s, (0, 0))
+            if len(pts) >= 2:
+                pygame.draw.aalines(self.screen, C_ACCENT, False, pts)
+                pygame.draw.aalines(self.screen, C_ACCENT, False,
+                                    [(x, y - 1) for x, y in pts])
+        if playhead is not None:
+            px = rect.x + int(rect.w * playhead)
+            pygame.draw.line(self.screen, C_TEXT, (px, rect.y + 2),
+                             (px, rect.bottom - 2), 2)
 
     # ------------------------------------------------------------------ drawing
 
@@ -133,145 +171,188 @@ class UI:
         pygame.display.flip()
 
     def _draw_main(self, app) -> None:
+        # Layer 1 + 2: backdrop and heat
         if app.base_surface is not None:
             self.screen.blit(app.base_surface, (0, 0))
         grid = app.display_grid()
         if grid is not None:
             self.screen.blit(heat_surface(grid, self.w, self.h), (0, 0))
 
-        # Mode chip (top-left) + demo badge — §4.6: demo must be unmistakable.
-        mode_label = "REPLAY " + app.replay_hour_label() if app.mode == "replay" else "LIVE"
-        chip = pygame.Rect(PAD, PAD, 150 if app.mode == "replay" else 92, 34)
-        self._panel(chip)
-        dot = C_WARN if app.mode == "replay" else C_OK
-        pygame.draw.circle(self.screen, dot, (chip.x + 16, chip.centery), 5)
-        self._text(mode_label, self.font, C_TEXT, (chip.x + 30, chip.centery - 9))
-        if app.settings.demo_mode and app.mode == "live":
-            badge = pygame.Rect(chip.right + 8, PAD, 128, 34)
-            self._panel(badge, (94, 61, 20, 245))
-            self._text("DEMO DATA", self.font, C_WARN, badge.center, "center")
-
-        # KPI chip (top-right): count + sparkline, merged onto the heatmap screen (§5).
-        kpi = pygame.Rect(self.w - 218 - PAD, PAD, 218, 92)
-        self._panel(kpi)
-        self._text(str(app.current_count()), self.font_big, C_TEXT,
-                   (kpi.x + 14, kpi.y + 8))
-        self._text("in frame", self.font_small, C_FAINT, (kpi.x + 14, kpi.y + 48))
-        self._sparkline(pygame.Rect(kpi.x + 96, kpi.y + 12, kpi.w - 110, kpi.h - 24),
-                        app.sparkline_values())
-
-        if app.base_surface is None:
-            self._text("No base image — open Settings and capture one to start",
-                       self.font, C_TEXT, (self.w // 2, self.h // 2), "center")
-
+        # Layer 3: chart strip
+        strip = pygame.Rect(PAD, self.h - STRIP_H - PAD, self.w - PAD * 2, STRIP_H)
+        self._glass(strip)
         if app.mode == "live":
-            # No bottom bar in live mode: just two small corner chips, so the
-            # camera/heatmap view stays as large as possible.
-            y = self.h - 46 - PAD
-            self._button(pygame.Rect(self.w - 214 - PAD, y, 100, 46), "Replay",
-                         "mode_replay")
-            self._button(pygame.Rect(self.w - 104 - PAD, y, 104, 46), "Settings",
-                         "settings")
+            self._draw_live_strip(app, strip)
         else:
-            bar = pygame.Rect(0, self.h - BAR_H, self.w, BAR_H)
-            self._panel(bar, (16, 21, 27, 190))
-            self._draw_replay_bar(app, bar)
+            self._draw_replay_strip(app, strip)
 
-    def _draw_replay_bar(self, app, bar: pygame.Rect) -> None:
-        y = bar.y + 12
-        self._button(pygame.Rect(PAD, y, 44, 40), "<", "hour_prev")
-        hr = pygame.Rect(PAD + 50, y, 120, 40)
-        self._panel(hr)
-        self._text(app.replay_hour_label(), self.font, C_TEXT, hr.center, "center")
-        self._button(pygame.Rect(hr.right + 6, y, 44, 40), ">", "hour_next")
+        # Layer 4: pills and hints
+        self._draw_top_bar(app)
+        if app.base_surface is None:
+            self._text("No base image — press B or open Settings to capture one",
+                       self.font, C_TEXT, (self.w // 2, self.h // 2 - 30), "center")
+        hint = ("B base   L live   R replay   D demo   S settings   ESC quit"
+                if app.mode == "live" else
+                "SPACE play/pause   < > keys seek 1 min   L live   ESC quit")
+        self._text(hint, self.font_sm, C_GHOST, (PAD + 6, strip.y - 24))
 
-        self._button(pygame.Rect(hr.right + 60, y, 52, 40),
-                     "II" if app.replay_playing else ">", "play")
-        self._button(pygame.Rect(hr.right + 118, y, 62, 40),
-                     f"{app.replay_speed}x", "speed")
+    def _draw_top_bar(self, app) -> None:
+        # Mode pill
+        live = app.mode == "live"
+        label = "LIVE" if live else "REPLAY " + app.replay_hour_label()
+        pw = 96 if live else 176
+        pill = pygame.Rect(PAD, PAD, pw, 36)
+        self._glass(pill, radius=18)
+        pygame.draw.circle(self.screen, C_OK if live else C_WARN,
+                           (pill.x + 19, pill.centery), 5)
+        self._text(label, self.font_sm, C_TEXT, (pill.x + 34, pill.centery), "midleft")
+        x = pill.right + 8
+        if app.settings.demo_mode and live:
+            badge = pygame.Rect(x, PAD, 118, 36)
+            self._glass(badge, (120, 82, 20, 190), radius=18)
+            self._text("DEMO DATA", self.font_label, C_WARN, badge.center, "center")
 
-        scrub = pygame.Rect(hr.right + 195, bar.y + 24, self.w - hr.right - 195 - 240, 16)
-        pygame.draw.rect(self.screen, C_LINE, scrub, border_radius=8)
-        t = app.replay_pos / HOUR_S
-        pygame.draw.rect(self.screen,
-                         C_ACCENT,
-                         pygame.Rect(scrub.x, scrub.y, max(8, int(scrub.w * t)), 16),
-                         border_radius=8)
-        self._sliders.append((scrub.inflate(0, 24), "scrub", 0.0, HOUR_S))
+        # Control pills, top-right
+        bx = self.w - PAD
+        for label2, bid in (("Settings", "settings"),
+                            ("Live", "mode_live") if not live else ("Replay", "mode_replay")):
+            r = pygame.Rect(0, PAD, 96, 36)
+            r.right = bx
+            self._pill(r, label2, bid)
+            bx = r.left - 8
+
+    def _draw_live_strip(self, app, strip: pygame.Rect) -> None:
+        # KPI merged into the strip (§5): big current count on the right
+        num_w = 118
+        chart = pygame.Rect(strip.x + 14, strip.y + 26, strip.w - num_w - 40,
+                            strip.h - 36)
+        self._text("PEOPLE DETECTED · LAST 60 S", self.font_label, C_FAINT,
+                   (chart.x, strip.y + 9))
+        self._chart(chart, app.sparkline_values(), None)
+        nx = strip.right - 14
+        self._text(str(app.current_count()), self.font_big, C_TEXT,
+                   (nx, strip.y + 8), "topright")
+        self._text("in frame", self.font_sm, C_FAINT, (nx, strip.y + 62), "topright")
+
+    def _draw_replay_strip(self, app, strip: pygame.Rect) -> None:
+        # Controls row inside the strip header
+        y = strip.y + 8
+        self._pill(pygame.Rect(strip.x + 12, y, 40, 30), "<", "hour_prev")
+        hr = pygame.Rect(strip.x + 56, y, 92, 30)
+        self._glass(hr, radius=15)
+        self._text(app.replay_hour_label(), self.font_sm, C_TEXT, hr.center, "center")
+        self._pill(pygame.Rect(hr.right + 4, y, 40, 30), ">", "hour_next")
+        self._pill(pygame.Rect(hr.right + 52, y, 62, 30),
+                   "Pause" if app.replay_playing else "Play", "play",
+                   active=app.replay_playing)
+        self._pill(pygame.Rect(hr.right + 118, y, 52, 30),
+                   f"{app.replay_speed}x", "speed")
         mins = int(app.replay_pos // 60)
-        self._text(f":{mins:02d}", self.font, C_FAINT, (scrub.right + 10, scrub.y))
+        secs = int(app.replay_pos % 60)
+        self._text(f"{app.replay_hour_label()[:2]}:{mins:02d}:{secs:02d}",
+                   self.font_sm, C_TEXT, (strip.right - 14, y + 6), "topright")
 
-        self._button(pygame.Rect(self.w - 180, y, 60, 40), "Live", "mode_live")
-        self._button(pygame.Rect(self.w - 114, y, 104, 40), "Settings", "settings")
+        # Timeline chart: whole hour of counts, click/drag to seek
+        chart = pygame.Rect(strip.x + 14, strip.y + 44, strip.w - 28, strip.h - 52)
+        counts = app.replay_data.counts if app.replay_data else []
+        self._chart(chart, counts, app.replay_pos / HOUR_S)
+        self._sliders.append((chart.inflate(0, 10), "scrub", 0.0, HOUR_S))
 
     def _draw_settings(self, app) -> None:
         s = app.settings
-        self._text("Settings", self.font_big, C_TEXT, (PAD + 10, PAD + 4))
-        self._button(pygame.Rect(self.w - 110, PAD + 8, 100, 40), "Back", "back")
-        self._button(pygame.Rect(self.w - 330, PAD + 8, 210, 40),
-                     "Capture base image", "capture")
-        x, colw = PAD + 10, (self.w - 60) // 2
-        y = 80
+        self._text("Settings", self.font_h1, C_TEXT, (PAD + 10, PAD + 6))
+        self._pill(pygame.Rect(self.w - 96 - PAD, PAD + 6, 96, 36), "Done", "back",
+                   active=True)
+        self._pill(pygame.Rect(self.w - 96 - PAD - 190, PAD + 6, 182, 36),
+                   "Capture base image", "capture", accent=True)
 
-        self._text("Environment preset", self.font, C_FAINT, (x, y))
+        colw = (self.w - PAD * 3) // 2
+        lx, rx = PAD, PAD * 2 + colw
+
+        # --- left column ---
+        card = pygame.Rect(lx, 64, colw, 236)
+        self._glass(card, C_GLASS_SOLID)
+        x, y = card.x + 18, card.y + 14
+        self._text("DETECTION & HEAT", self.font_label, C_ACCENT, (x, y))
+        y += 28
+        self._text("Environment preset", self.font_sm, C_FAINT, (x, y))
         bx = x
         for name in ENV_PRESETS:
-            r = pygame.Rect(bx, y + 26, 130, 40)
-            self._button(r, name.capitalize(), f"preset_{name}")
+            r = pygame.Rect(bx, y + 22, 118, 36)
+            self._pill(r, name.capitalize(), f"preset_{name}")
             bx = r.right + 8
-        y += 92
-
-        self._text("Time frame (heat decay window)", self.font, C_FAINT, (x, y))
+        y += 76
+        self._text("Time frame", self.font_sm, C_FAINT, (x, y))
         bx = x
         for i, (label, hours) in enumerate(TIME_FRAME_CHOICES):
-            r = pygame.Rect(bx, y + 26, 88, 40)
-            self._button(r, label, f"tf_{i}", active=abs(s.time_frame_hours - hours) < 1e-6)
+            r = pygame.Rect(bx, y + 22, 80, 36)
+            self._pill(r, label, f"tf_{i}",
+                       active=abs(s.time_frame_hours - hours) < 1e-6)
             bx = r.right + 8
-        y += 92
-
-        self._slider(pygame.Rect(x, y + 26, colw - 40, 20), "conf",
+        y += 84
+        self._slider(pygame.Rect(x, y + 18, card.w - 60, 18), "conf",
                      s.confidence_threshold, 0.1, 0.9,
                      "Detection confidence", f"{int(s.confidence_threshold * 100)}%")
-        y += 82
 
-        self._text("Reference photos (off by default — saves disk space)",
-                   self.font, C_FAINT, (x, y))
-        self._button(pygame.Rect(x, y + 26, 130, 40),
-                     "ON" if s.save_reference_photos else "OFF",
-                     "toggle_photos", active=s.save_reference_photos)
-        bx = x + 140
+        card2 = pygame.Rect(lx, card.bottom + 14, colw, 176)
+        self._glass(card2, C_GLASS_SOLID)
+        x, y = card2.x + 18, card2.y + 14
+        self._text("STORAGE", self.font_label, C_ACCENT, (x, y))
+        y += 28
+        self._text("Reference photos (off saves disk space)", self.font_sm, C_FAINT,
+                   (x, y))
+        self._pill(pygame.Rect(x, y + 22, 78, 36),
+                   "On" if s.save_reference_photos else "Off",
+                   "toggle_photos", active=s.save_reference_photos)
+        bx = x + 88
         for i, iv in enumerate(REF_INTERVAL_CHOICES):
-            r = pygame.Rect(bx, y + 26, 66, 40)
-            label = f"{iv:g}s"
-            self._button(r, label, f"ref_{i}", active=abs(s.reference_interval_s - iv) < 1e-6)
+            r = pygame.Rect(bx, y + 22, 58, 36)
+            self._pill(r, f"{iv:g}s", f"ref_{i}",
+                       active=abs(s.reference_interval_s - iv) < 1e-6)
             bx = r.right + 6
-        y += 92
+        y += 76
+        self._text("Heat log (needed for Replay)", self.font_sm, C_FAINT, (x, y))
+        self._pill(pygame.Rect(x, y + 22, 78, 36),
+                   "On" if s.save_heat_log else "Off",
+                   "toggle_log", active=s.save_heat_log)
 
-        self._button(pygame.Rect(x, y, 220, 44),
-                     f"Save heat log: {'ON' if s.save_heat_log else 'OFF'}",
-                     "toggle_log", active=s.save_heat_log)
-
-        # Right column: Presentation (§4.6)
-        x2 = PAD + 30 + colw
-        y2 = 80
-        self._text("Presentation", self.font, C_FAINT, (x2, y2))
-        self._button(pygame.Rect(x2, y2 + 26, 200, 44),
-                     f"Demo mode: {'ON' if s.demo_mode else 'OFF'}",
-                     "toggle_demo", active=s.demo_mode)
-        y2 += 110
-        self._slider(pygame.Rect(x2, y2 + 26, colw - 60, 20), "demo_min",
+        # --- right column ---
+        card3 = pygame.Rect(rx, 64, colw, 236)
+        self._glass(card3, C_GLASS_SOLID)
+        x, y = card3.x + 18, card3.y + 14
+        self._text("PRESENTATION", self.font_label, C_ACCENT, (x, y))
+        y += 28
+        self._text("Demo mode — synthetic activity for presentations",
+                   self.font_sm, C_FAINT, (x, y))
+        self._pill(pygame.Rect(x, y + 22, 78, 36),
+                   "On" if s.demo_mode else "Off",
+                   "toggle_demo", active=s.demo_mode)
+        y += 80
+        self._slider(pygame.Rect(x, y + 18, card3.w - 60, 18), "demo_min",
                      s.demo_min, 1, 50, "Demo headcount min", str(s.demo_min))
-        y2 += 80
-        self._slider(pygame.Rect(x2, y2 + 26, colw - 60, 20), "demo_max",
+        y += 62
+        self._slider(pygame.Rect(x, y + 18, card3.w - 60, 18), "demo_max",
                      s.demo_max, 1, 50, "Demo headcount max", str(s.demo_max))
+
+        card4 = pygame.Rect(rx, card3.bottom + 14, colw, 176)
+        self._glass(card4, C_GLASS_SOLID)
+        x, y = card4.x + 18, card4.y + 14
+        self._text("SHORTCUTS", self.font_label, C_ACCENT, (x, y))
+        y += 30
+        for keys, desc in (("B", "Capture base image"), ("L / R", "Live / Replay"),
+                           ("D", "Toggle demo mode"), ("S", "Open settings"),
+                           ("SPACE", "Play / pause replay"), ("ESC", "Back / quit")):
+            self._text(keys, self.font_sm, C_TEXT, (x, y))
+            self._text(desc, self.font_sm, C_FAINT, (x + 80, y))
+            y += 23
 
     def _draw_flash(self) -> None:
         if self._flash and time.time() < self._flash[1]:
             msg = self._flash[0]
-            r = pygame.Rect(0, 0, 16 + len(msg) * 9, 38)
+            r = pygame.Rect(0, 0, 24 + len(msg) * 9, 40)
             r.midtop = (self.w // 2, PAD)
-            self._panel(r, (31, 61, 94, 250))
-            self._text(msg, self.font, C_TEXT, r.center, "center")
+            self._glass(r, (31, 76, 128, 235), radius=20)
+            self._text(msg, self.font_sm, C_TEXT, r.center, "center")
 
     # ------------------------------------------------------------------ events
 
