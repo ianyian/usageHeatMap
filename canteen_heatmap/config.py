@@ -16,6 +16,15 @@ TIME_FRAME_CHOICES = [
 
 REF_INTERVAL_CHOICES = [0.5, 1.0, 2.0, 5.0, 10.0]
 
+# Per-environment presets: one tap in Settings applies the tuning that fits the
+# space. Warehouse keeps a long time frame so an overnight pass-through stays
+# visible until security reviews it; lobby/canteen use short memory.
+ENV_PRESETS = {
+    "canteen": {"time_frame_hours": 10 / 60, "confidence_threshold": 0.45},
+    "lobby": {"time_frame_hours": 10 / 60, "confidence_threshold": 0.50},
+    "warehouse": {"time_frame_hours": 6.0, "confidence_threshold": 0.35},
+}
+
 
 @dataclass
 class Settings:
@@ -23,7 +32,10 @@ class Settings:
     time_frame_hours: float = 10 / 60
     # Detections below this confidence are discarded before the heat engine.
     confidence_threshold: float = 0.45
-    # How often a reference JPEG is written to logPicture/ (seconds).
+    # Reference photos are OFF by default — the heatmapLog alone supports replay,
+    # and periodic JPEGs are the biggest disk consumer on an SD card.
+    save_reference_photos: bool = False
+    # How often a reference JPEG is written to logPicture/ (seconds), when enabled.
     reference_interval_s: float = 5.0
     save_heat_log: bool = True
     demo_mode: bool = False

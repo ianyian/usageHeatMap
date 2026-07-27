@@ -51,9 +51,11 @@ class HourReplay:
                 cursor = max(cursor, rt)
                 if rec.get("type") == "checkpoint" and "grid" in rec:
                     grid.load_encoded(rec["grid"])
-                elif rec.get("type") == "detection":
+                elif rec.get("type") in ("sample", "detection"):
                     people = rec.get("people", [])
-                    last_count = len(people)
+                    # "sample" records aggregate a window: "count" is the peak
+                    # concurrent headcount, while "people" holds every foot-point.
+                    last_count = rec.get("count", len(people))
                     for p in people:
                         grid.deposit(p["x"], p["y"], p.get("conf", 0.5))
                 rec_i += 1

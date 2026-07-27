@@ -23,6 +23,12 @@ from .heatmap import HeatGrid
 
 Detection = Tuple[float, float, float]
 
+# Detection events are consolidated into one log record per this many seconds.
+# The record carries every foot-point seen in the window plus the peak concurrent
+# headcount — ~12x fewer lines than logging each detector tick, with the same
+# replay fidelity at replay's 5s snapshot resolution.
+LOG_AGGREGATE_S = 5.0
+
 
 class SessionStore:
     def __init__(self, data_dir: Path):
@@ -30,6 +36,9 @@ class SessionStore:
         self.session_dir: Optional[Path] = None
         self._log_hour: Optional[str] = None  # "YYYY-MM-DD_HH" of the open log file
         self._last_ref_save = 0.0
+        self._agg_people: List[Detection] = []
+        self._agg_peak = 0
+        self._agg_start: Optional[float] = None
 
     # --- session lifecycle ---
 
@@ -83,9 +92,21 @@ class SessionStore:
         return self.session_dir / "log" / f"heatmapLog_{hour_key}.jsonl"
 
     def log_detections(self, people: List[Detection], grid: HeatGrid) -> None:
-        """Append a detection record; on entering a new hour, write a checkpoint
-        record first so each hourly file replays standalone with continuity."""
+        """Buffer detections; a consolidated record is written every LOG_AGGREGATE_S."""
         if self.session_dir is None:
+            return
+        now = time.time()
+        if self._agg_start is None:
+            self._agg_start = now
+        self._agg_people.extend(people)
+        self._agg_peak = max(self._agg_peak, len(people))
+        if now - self._agg_start >= LOG_AGGREGATE_S:
+            self.flush_log(grid)
+
+    def flush_log(self, grid: HeatGrid) -> None:
+        """Write the buffered window as one record; on entering a new hour, write a
+        checkpoint record first so each hourly file replays standalone."""
+        if self.session_dir is None or self._agg_start is None:
             return
         now = datetime.now()
         hour_key = now.strftime("%Y-%m-%d_%H")
@@ -106,16 +127,20 @@ class SessionStore:
             f.write(
                 json.dumps(
                     {
-                        "type": "detection",
+                        "type": "sample",
                         "t": now.isoformat(timespec="milliseconds"),
+                        "count": self._agg_peak,
                         "people": [
-                            {"x": round(x, 4), "y": round(y, 4), "conf": round(c, 3)}
-                            for x, y, c in people
+                            {"x": round(x, 3), "y": round(y, 3), "conf": round(c, 2)}
+                            for x, y, c in self._agg_people
                         ],
                     }
                 )
                 + "\n"
             )
+        self._agg_people = []
+        self._agg_peak = 0
+        self._agg_start = None
 
     # --- replay reads (§4.5) ---
 

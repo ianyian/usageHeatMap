@@ -16,7 +16,7 @@ import pygame
 
 from . import config
 from .capture import Camera, MotionGate
-from .config import REF_INTERVAL_CHOICES, TIME_FRAME_CHOICES, Settings
+from .config import ENV_PRESETS, REF_INTERVAL_CHOICES, TIME_FRAME_CHOICES, Settings
 from .demo import DemoSimulator
 from .heatmap import HeatGrid
 from .replay import HOUR_S, HourReplay
@@ -128,6 +128,13 @@ class App:
             self.replay_speed = REPLAY_SPEEDS[(i + 1) % len(REPLAY_SPEEDS)]
         elif bid == "toggle_log":
             s.save_heat_log = not s.save_heat_log
+        elif bid == "toggle_photos":
+            s.save_reference_photos = not s.save_reference_photos
+        elif bid.startswith("preset_"):
+            for k, v in ENV_PRESETS[bid[7:]].items():
+                setattr(s, k, v)
+            self.heat.set_time_frame(s.time_frame_hours)
+            self.ui.flash(f"Applied {bid[7:]} preset")
         elif bid == "toggle_demo":
             s.demo_mode = not s.demo_mode
         elif bid.startswith("tf_"):
@@ -214,7 +221,11 @@ class App:
                 if self.settings.save_heat_log and self.store.session_dir is not None:
                     self.store.log_detections(people, self.heat)
 
-        if self.store.session_dir is not None and self.last_frame is not None:
+        if (
+            self.settings.save_reference_photos
+            and self.store.session_dir is not None
+            and self.last_frame is not None
+        ):
             self.store.maybe_save_reference(
                 self.last_frame, self.settings.reference_interval_s
             )
@@ -263,6 +274,7 @@ class App:
                 pygame.image.save(self.ui.screen, self.snapshot_path)
             clock.tick(30)
 
+        self.store.flush_log(self.heat)  # write any partial aggregate window
         self.save_settings()
         if self.camera is not None:
             self.camera.release()

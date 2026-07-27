@@ -12,7 +12,7 @@ import cv2
 import numpy as np
 import pygame
 
-from .config import REF_INTERVAL_CHOICES, TIME_FRAME_CHOICES
+from .config import ENV_PRESETS, REF_INTERVAL_CHOICES, TIME_FRAME_CHOICES
 from .heatmap import render_overlay
 from .replay import HOUR_S
 
@@ -210,6 +210,14 @@ class UI:
         x, colw = PAD + 10, (self.w - 60) // 2
         y = 80
 
+        self._text("Environment preset", self.font, C_FAINT, (x, y))
+        bx = x
+        for name in ENV_PRESETS:
+            r = pygame.Rect(bx, y + 26, 130, 40)
+            self._button(r, name.capitalize(), f"preset_{name}")
+            bx = r.right + 8
+        y += 92
+
         self._text("Time frame (heat decay window)", self.font, C_FAINT, (x, y))
         bx = x
         for i, (label, hours) in enumerate(TIME_FRAME_CHOICES):
@@ -223,13 +231,17 @@ class UI:
                      "Detection confidence", f"{int(s.confidence_threshold * 100)}%")
         y += 82
 
-        self._text("Reference image interval", self.font, C_FAINT, (x, y))
-        bx = x
+        self._text("Reference photos (off by default — saves disk space)",
+                   self.font, C_FAINT, (x, y))
+        self._button(pygame.Rect(x, y + 26, 130, 40),
+                     "ON" if s.save_reference_photos else "OFF",
+                     "toggle_photos", active=s.save_reference_photos)
+        bx = x + 140
         for i, iv in enumerate(REF_INTERVAL_CHOICES):
-            r = pygame.Rect(bx, y + 26, 78, 40)
+            r = pygame.Rect(bx, y + 26, 66, 40)
             label = f"{iv:g}s"
             self._button(r, label, f"ref_{i}", active=abs(s.reference_interval_s - iv) < 1e-6)
-            bx = r.right + 8
+            bx = r.right + 6
         y += 92
 
         self._button(pygame.Rect(x, y, 220, 44),

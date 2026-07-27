@@ -129,12 +129,24 @@ Four independent concerns, each replaceable without touching the others:
 
 | Setting | Default | Range / options | Notes |
 |---|---|---|---|
+| Environment preset | — | Canteen / Lobby / Warehouse | One-tap tuning bundle, see below |
 | Time frame | 10 minutes | 10m / 1h / 3h / 6h / 24h / custom | Decay window (§4.3) |
 | Detection confidence | 45% | 10–90% | Min confidence to accept a detection |
-| Reference image interval | 5s | 0.5s / 1s / 2s / 5s / 10s | See §6.1 — unrelated to detection rate |
+| Save reference photos | **off** | on/off | Off by default to save disk — see §6.1 |
+| Reference image interval | 5s | 0.5s / 1s / 2s / 5s / 10s | Only applies when photos are on |
 | Demo mode | off (real use) | on/off | See §4.6 |
 | Demo headcount range | 3–9 | 1–50 (dual range) | Only active while Demo mode is on |
 | Save heat log to disk | on | on/off | Turning off stops `heatmapLog` writes (Replay then has nothing new to show) |
+
+**Environment presets** — the same engine serves very different spaces, differing mainly in
+tuning. A preset applies a bundle in one tap rather than asking the operator to reason about
+decay math:
+
+| Preset | Time frame | Confidence | Rationale |
+|---|---|---|---|
+| Canteen | 10 min | 45% | Busy at meal times; short memory shows *current* usage |
+| Lobby | 10 min | 50% | Crowded all day; slightly stricter to cut false positives |
+| Warehouse | 6 h | 35% | Quiet overnight; a brief, faint pass-through must stay visible until security reviews it, and lower confidence catches partial/shadowed figures |
 
 ## 5. UI requirements — single-screen, Pi-appropriate
 
@@ -162,12 +174,13 @@ screen**. For the real build:
 
 Two different things are captured, at two different rates, and neither is derived from the other:
 
-### 6.1 Reference photos
+### 6.1 Reference photos — off by default
 Plain JPEGs saved on the **reference image interval** setting (default 5s), purely for visual
-context when a person later reviews a session. Detection itself runs continuously in memory at a
-much higher effective rate — this interval only controls what gets *written to disk*, keeping
-`logPicture/` from filling up with near-duplicate frames. These images are never read back by the
-heat engine or Replay.
+context when a person later reviews a session. **Saving them is off by default**: the heatmapLog
+alone fully supports replay, so periodic photos are optional context, not required data — and on
+an SD card they are by far the largest disk consumer, so the default favors disk life. When
+enabled, the interval only controls what gets *written to disk* — detection itself runs
+continuously in memory regardless. These images are never read back by the heat engine or Replay.
 
 ### 6.2 heatmapLog
 The actual data Replay is built from — extracted detection events, not images. Much smaller than
@@ -178,16 +191,22 @@ photos, and purpose-built for the heat engine to reconstruct a grid, not for hum
   carrying forward the grid/decay state from the end of the previous hour's log, so Replay of an
   hour never shows an artificial reset to zero at `:00` — activity decays continuously; it's only
   filed into hourly chunks on disk for manageability.
-- Suggested record shape (JSON Lines, one record per line):
+- **Consolidated records**: detection events are *not* written per detector tick (which could be
+  several per second). They are buffered and written as **one record per 5-second window**: the
+  record carries every foot-point observed in the window plus the peak concurrent headcount.
+  This is ~12× fewer log lines than per-tick logging with no loss of replay quality, since Replay
+  reconstructs at 5-second snapshot resolution anyway. Record shape (JSON Lines):
 
   ```json
   {"type": "checkpoint", "t": "2026-07-27T14:00:00Z", "grid": "<compact encoding of carried-over state>"}
-  {"type": "detection", "t": "2026-07-27T14:00:00.4Z", "people": [{"x": 0.23, "y": 0.61, "conf": 0.82}]}
-  {"type": "detection", "t": "2026-07-27T14:00:00.9Z", "people": []}
+  {"type": "sample", "t": "2026-07-27T14:00:05Z", "count": 3, "people": [{"x": 0.23, "y": 0.61, "conf": 0.82}, {"x": 0.24, "y": 0.6, "conf": 0.8}]}
+  {"type": "sample", "t": "2026-07-27T14:00:10Z", "count": 0, "people": []}
   ```
-  Storing raw `(x, y, confidence)` events rather than pre-rendered dense grids keeps the log small
-  and lets rendering parameters (decay rate, color ramp, grid resolution) change later without
-  needing to have been baked in at capture time.
+  `count` is the peak *concurrent* headcount in the window (the `people` list holds all positions
+  accumulated across the window, so its length overstates concurrency). Storing raw
+  `(x, y, confidence)` events rather than pre-rendered dense grids keeps the log small and lets
+  rendering parameters (decay rate, color ramp, grid resolution) change later without needing to
+  have been baked in at capture time.
 
 ### 6.3 Session folder layout
 Every base-image capture starts a new session folder, keeping a session's photos and logs
@@ -198,9 +217,8 @@ together:
   <session-name>/                 # named on base-image capture, e.g. a timestamp
     baseImage/
       <base-image>.jpg
-    logPicture/
-      2026-07-27_14-00-05.jpg     # reference photo, every 5s (default)
-      2026-07-27_14-00-10.jpg
+    logPicture/                   # empty unless "Save reference photos" is turned on
+      2026-07-27_14-00-05.jpg     # reference photo on the configured interval, when enabled
       ...
     log/
       heatmapLog_14.jsonl         # one file per hour; first record continues
