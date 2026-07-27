@@ -15,19 +15,30 @@ MOTION_THUMB_W = 80
 
 
 class Camera:
-    def __init__(self, index: int = 0, width: int = 1280, height: int = 720):
-        self.cap = cv2.VideoCapture(index)
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+    """A frame source: a live camera index, or a video file path (dev/testing —
+    lets recorded footage of a busy space stand in for the real camera)."""
+
+    def __init__(self, source=0, width: int = 1280, height: int = 720):
+        self.is_file = isinstance(source, str)
+        self.cap = cv2.VideoCapture(source)
+        if not self.is_file:
+            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
         if not self.cap.isOpened():
+            if self.is_file:
+                raise RuntimeError(f"Could not open video file: {source}")
             raise RuntimeError(
-                f"Could not open camera index {index}. On macOS, grant camera "
+                f"Could not open camera index {source}. On macOS, grant camera "
                 "permission to the terminal app (System Settings → Privacy & Security "
                 "→ Camera) and retry."
             )
 
     def read(self) -> Optional[np.ndarray]:
         ok, frame = self.cap.read()
+        if not ok and self.is_file:
+            # Loop the video so a short clip behaves like an endless live feed.
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            ok, frame = self.cap.read()
         return frame if ok else None
 
     def release(self) -> None:

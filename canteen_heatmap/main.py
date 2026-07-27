@@ -24,13 +24,18 @@ from .storage import SessionStore
 from .ui import UI, cover_fit
 
 DETECT_INTERVAL_S = 0.4     # max detector rate; motion gate can make it rarer
+# The motion gate saves CPU, but a perfectly still person produces no motion — the
+# detector must still run periodically or a stationary person is never detected
+# (and nothing gets logged). This also guarantees log records keep flowing.
+DETECT_HEARTBEAT_S = 2.0
 SPARKLINE_SAMPLES = 120     # ~1 minute of headcount history at 2 Hz
 SPARKLINE_PERIOD_S = 0.5
 REPLAY_SPEEDS = [1, 4, 16, 60]
 
 
 class App:
-    def __init__(self, settings: Settings, settings_dir: Path):
+    def __init__(self, settings: Settings, settings_dir: Path,
+                 video_file: Optional[str] = None):
         self.settings = settings
         self.settings_dir = settings_dir
         self.ui = UI(settings.screen_w, settings.screen_h)
@@ -59,7 +64,8 @@ class App:
 
         print("Opening camera…", flush=True)
         try:
-            self.camera: Optional[Camera] = Camera(settings.camera_index)
+            source = video_file if video_file else settings.camera_index
+            self.camera: Optional[Camera] = Camera(source)
         except RuntimeError as e:
             # Run anyway: demo mode and replay work without a camera, and this
             # keeps the Pi from crash-looping on an unplugged/blocked camera.
@@ -107,6 +113,8 @@ class App:
         s = self.settings
         if bid == "capture":
             self.capture_base()
+            self.view = "main"  # jump back so the new session is visible immediately
+            self.mode = "live"
         elif bid == "mode_live":
             self.mode = "live"
             self.replay_playing = False
@@ -209,7 +217,10 @@ class App:
             if self.settings.demo_mode:
                 people = self.demo.tick(self.settings.demo_min, self.settings.demo_max)
                 ran_detector = True
-            elif self.last_frame is not None and self.gate.triggered(self.last_frame):
+            elif self.last_frame is not None and (
+                self.gate.triggered(self.last_frame)
+                or now - self._last_detect >= DETECT_HEARTBEAT_S
+            ):
                 people = self.detector.detect(
                     self.last_frame, self.settings.confidence_threshold
                 )
@@ -289,6 +300,9 @@ def main() -> None:
                         help="where session folders are written (default: ./data)")
     parser.add_argument("--demo", action="store_true",
                         help="start with demo mode enabled")
+    parser.add_argument("--video", type=str, default=None,
+                        help="use a video file as the camera input (loops; for testing "
+                             "with recorded footage of a busy space)")
     parser.add_argument("--snapshot", type=str, default=None,
                         help="dev aid: save a PNG of the screen to this path every 5s")
     args = parser.parse_args()
@@ -303,7 +317,7 @@ def main() -> None:
         settings.demo_mode = True
 
     try:
-        app = App(settings, settings_dir)
+        app = App(settings, settings_dir, video_file=args.video)
         app.snapshot_path = args.snapshot
         app.run()
     except RuntimeError as e:

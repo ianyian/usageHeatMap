@@ -20,7 +20,9 @@ BAR_H = 64
 PAD = 10
 
 C_BG = (13, 17, 23)
-C_PANEL = (22, 28, 36, 225)
+# Overlay chips are translucent so they cost as little live-view as possible.
+C_PANEL = (16, 21, 27, 150)
+C_PANEL_SOLID = (22, 28, 36, 235)
 C_TEXT = (225, 232, 240)
 C_FAINT = (140, 152, 165)
 C_ACCENT = (64, 156, 255)
@@ -82,7 +84,7 @@ class UI:
 
     def _button(self, rect: pygame.Rect, label: str, bid: str, active=False,
                 color=None):
-        self._panel(rect, (38, 48, 60, 240) if not active else (31, 61, 94, 250))
+        self._panel(rect, (38, 48, 60, 170) if not active else (31, 61, 94, 210))
         pygame.draw.rect(self.screen, C_ACCENT if active else C_LINE, rect, 1,
                          border_radius=10)
         self._text(label, self.font, color or (C_TEXT if active else C_FAINT),
@@ -159,22 +161,21 @@ class UI:
                         app.sparkline_values())
 
         if app.base_surface is None:
-            self._text("No base image — press  Capture base  to start a session",
+            self._text("No base image — open Settings and capture one to start",
                        self.font, C_TEXT, (self.w // 2, self.h // 2), "center")
 
-        bar = pygame.Rect(0, self.h - BAR_H, self.w, BAR_H)
-        self._panel(bar, (16, 21, 27, 235))
         if app.mode == "live":
-            self._draw_live_bar(app, bar)
+            # No bottom bar in live mode: just two small corner chips, so the
+            # camera/heatmap view stays as large as possible.
+            y = self.h - 46 - PAD
+            self._button(pygame.Rect(self.w - 214 - PAD, y, 100, 46), "Replay",
+                         "mode_replay")
+            self._button(pygame.Rect(self.w - 104 - PAD, y, 104, 46), "Settings",
+                         "settings")
         else:
+            bar = pygame.Rect(0, self.h - BAR_H, self.w, BAR_H)
+            self._panel(bar, (16, 21, 27, 190))
             self._draw_replay_bar(app, bar)
-
-    def _draw_live_bar(self, app, bar: pygame.Rect) -> None:
-        y = bar.y + 12
-        self._button(pygame.Rect(PAD, y, 150, 40), "Capture base", "capture")
-        self._button(pygame.Rect(PAD + 160, y, 90, 40), "Live", "mode_live", active=True)
-        self._button(pygame.Rect(PAD + 260, y, 100, 40), "Replay", "mode_replay")
-        self._button(pygame.Rect(self.w - 120, y, 110, 40), "Settings", "settings")
 
     def _draw_replay_bar(self, app, bar: pygame.Rect) -> None:
         y = bar.y + 12
@@ -207,6 +208,8 @@ class UI:
         s = app.settings
         self._text("Settings", self.font_big, C_TEXT, (PAD + 10, PAD + 4))
         self._button(pygame.Rect(self.w - 110, PAD + 8, 100, 40), "Back", "back")
+        self._button(pygame.Rect(self.w - 330, PAD + 8, 210, 40),
+                     "Capture base image", "capture")
         x, colw = PAD + 10, (self.w - 60) // 2
         y = 80
 
