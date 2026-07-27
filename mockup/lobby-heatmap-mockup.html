@@ -556,6 +556,18 @@
     padding: 6px 4px;
   }
   .back-btn:hover { color: var(--accent); }
+  .preset-btn {
+    flex: 1;
+    background: var(--panel-2, #1c2530);
+    border: 1px solid var(--line, #2a3542);
+    color: var(--text-dim);
+    font-size: 12.5px;
+    font-weight: 600;
+    padding: 8px 0;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .preset-btn:hover { color: var(--accent); border-color: var(--accent); }
   .settings-header h2 { margin: 0; font-size: 16px; font-weight: 700; }
   .settings-grid {
     display: grid;
@@ -706,6 +718,15 @@
       <section class="settings-card">
         <h3>Session</h3>
         <div class="field">
+          <label>Environment preset</label>
+          <div style="display:flex; gap:8px;">
+            <button class="preset-btn" data-preset="canteen">Canteen</button>
+            <button class="preset-btn" data-preset="lobby">Lobby</button>
+            <button class="preset-btn" data-preset="warehouse">Warehouse</button>
+          </div>
+        </div>
+        <div class="field-hint">One tap applies tuning that fits the space. Canteen/Lobby: short 10-minute memory for busy areas. Warehouse: 6-hour retention and lower confidence, so a brief overnight pass-through stays visible until security reviews it.</div>
+        <div class="field">
           <label>Time frame <span class="val" id="timeframeVal">10m</span></label>
           <select id="timeframeSelect">
             <option value="0.1667" selected>10 minutes (default)</option>
@@ -725,6 +746,13 @@
           <label>Detection confidence <span class="val" id="sensVal">45%</span></label>
           <input type="range" id="sensRange" min="10" max="90" value="45">
         </div>
+        <div class="field toggle-row">
+          <label style="margin:0">Save reference photos</label>
+          <label class="switch">
+            <input type="checkbox" id="photoToggle">
+            <span class="slider-toggle"></span>
+          </label>
+        </div>
         <div class="field">
           <label>Reference image interval <span class="val" id="captureIntervalVal">5s</span></label>
           <select id="captureIntervalSelect">
@@ -735,7 +763,7 @@
             <option value="10">10 s</option>
           </select>
         </div>
-        <div class="field-hint">Detection keeps comparing frames continuously in memory, and the heatmap itself is extracted and written to <code>heatmapLog</code> — not derived from these photos. This interval only controls the plain reference photo saved to <code>logPicture/</code> for visual context; movement in a lobby rarely needs finer than every 5s, and it keeps that folder from filling up with near-duplicate images.</div>
+        <div class="field-hint"><strong>Off by default to save disk space</strong> — the <code>heatmapLog</code> alone supports replay, so periodic photos are optional visual context, not required data. When enabled, this interval controls how often a plain JPEG is saved to <code>logPicture/</code>.</div>
         <div class="field toggle-row">
           <label style="margin:0">Save heat log to disk</label>
           <label class="switch">
@@ -743,6 +771,7 @@
             <span class="slider-toggle"></span>
           </label>
         </div>
+        <div class="field-hint">Detection events are consolidated into <strong>one record per 5 seconds</strong> — each record carries every detected position in that window plus the peak headcount — roughly 12× fewer log lines than per-frame logging, with the same replay quality.</div>
       </section>
 
       <section class="settings-card">
@@ -801,77 +830,195 @@
   var bctx = baseCanvas.getContext('2d');
 
   function drawBaseScene() {
-    bctx.fillStyle = '#efe9db';
-    bctx.fillRect(0, 0, W, H);
+    // A production-style canteen seen from a high-mounted camera: serving
+    // counters on the left, rows of long tables with stools, glass entrance
+    // on the right. Same zone geometry as before (COUNTERS/TABLES/ENTRANCE).
+    var wallH = H * 0.24;
 
-    var muralH = H * 0.22;
-    bctx.save();
-    bctx.beginPath();
-    bctx.rect(0, 0, W, muralH);
-    bctx.clip();
-    bctx.fillStyle = '#f5f1e6';
-    bctx.fillRect(0, 0, W, muralH);
-    bctx.strokeStyle = '#4fa9c7';
-    bctx.lineWidth = 10;
-    bctx.beginPath();
-    bctx.moveTo(-20, muralH * 0.7);
-    bctx.bezierCurveTo(W * 0.2, muralH * 0.3, W * 0.35, muralH * 1.0, W * 0.6, muralH * 0.5);
-    bctx.bezierCurveTo(W * 0.75, muralH * 0.2, W * 0.9, muralH * 0.6, W + 20, muralH * 0.3);
-    bctx.stroke();
-    bctx.strokeStyle = '#8fc93a';
-    bctx.lineWidth = 16;
-    bctx.beginPath();
-    bctx.moveTo(W * 0.3, -10);
-    bctx.bezierCurveTo(W * 0.55, muralH * 0.4, W * 0.4, muralH * 0.9, W * 0.65, muralH * 0.6);
-    bctx.stroke();
-    bctx.fillStyle = '#f0a6c4';
-    bctx.beginPath();
-    bctx.ellipse(W * 0.58, muralH * 0.55, 26, 16, 0.6, 0, Math.PI * 2);
-    bctx.fill();
-    var dots = [[0.08, 0.3], [0.15, 0.6], [0.5, 0.2], [0.7, 0.75], [0.85, 0.35], [0.93, 0.6]];
-    dots.forEach(function (d, i) {
-      bctx.fillStyle = i % 2 ? '#e8626f' : '#5fb6c9';
+    // --- back wall: warm painted top + tiled lower band ---
+    var wallGrad = bctx.createLinearGradient(0, 0, 0, wallH);
+    wallGrad.addColorStop(0, '#efe5d3');
+    wallGrad.addColorStop(1, '#e2d5bf');
+    bctx.fillStyle = wallGrad;
+    bctx.fillRect(0, 0, W, wallH);
+    // ceiling lights reflected as soft bright pools on the wall
+    for (var li = 0; li < 4; li++) {
+      var lx = W * (0.14 + li * 0.24);
+      var lg = bctx.createRadialGradient(lx, wallH * 0.1, 4, lx, wallH * 0.1, W * 0.09);
+      lg.addColorStop(0, 'rgba(255,252,240,0.75)');
+      lg.addColorStop(1, 'rgba(255,252,240,0)');
+      bctx.fillStyle = lg;
+      bctx.fillRect(lx - W * 0.1, 0, W * 0.2, wallH);
+    }
+    // wall tile band
+    bctx.fillStyle = '#d7e2e4';
+    bctx.fillRect(0, wallH * 0.55, W, wallH * 0.45);
+    bctx.strokeStyle = 'rgba(120,140,145,0.35)';
+    bctx.lineWidth = 1;
+    for (var tx1 = 0; tx1 <= W; tx1 += W * 0.045) {
+      bctx.beginPath(); bctx.moveTo(tx1, wallH * 0.55); bctx.lineTo(tx1, wallH); bctx.stroke();
+    }
+    bctx.beginPath(); bctx.moveTo(0, wallH * 0.77); bctx.lineTo(W, wallH * 0.77); bctx.stroke();
+
+    // menu board above the serving area
+    bctx.fillStyle = '#2e3a40';
+    bctx.fillRect(W * 0.03, wallH * 0.08, W * 0.26, wallH * 0.4);
+    bctx.strokeStyle = '#1d2529';
+    bctx.lineWidth = 3;
+    bctx.strokeRect(W * 0.03, wallH * 0.08, W * 0.26, wallH * 0.4);
+    bctx.fillStyle = '#e8c96a';
+    bctx.font = 'bold ' + (wallH * 0.13) + 'px sans-serif';
+    bctx.fillText('MENU', W * 0.045, wallH * 0.26);
+    bctx.strokeStyle = 'rgba(230,225,210,0.5)';
+    bctx.lineWidth = 2;
+    for (var mi = 0; mi < 3; mi++) {
       bctx.beginPath();
-      bctx.arc(W * d[0], muralH * d[1], 6, 0, Math.PI * 2);
-      bctx.fill();
+      bctx.moveTo(W * 0.045, wallH * (0.32 + mi * 0.05));
+      bctx.lineTo(W * 0.27, wallH * (0.32 + mi * 0.05));
+      bctx.stroke();
+    }
+    // wall clock + exit sign on the right
+    bctx.fillStyle = '#f4f2ec';
+    bctx.beginPath(); bctx.arc(W * 0.62, wallH * 0.3, wallH * 0.11, 0, Math.PI * 2); bctx.fill();
+    bctx.strokeStyle = '#3a4348'; bctx.lineWidth = 2;
+    bctx.beginPath(); bctx.arc(W * 0.62, wallH * 0.3, wallH * 0.11, 0, Math.PI * 2); bctx.stroke();
+    bctx.beginPath(); bctx.moveTo(W * 0.62, wallH * 0.3); bctx.lineTo(W * 0.62, wallH * 0.21); bctx.stroke();
+    bctx.beginPath(); bctx.moveTo(W * 0.62, wallH * 0.3); bctx.lineTo(W * 0.655, wallH * 0.32); bctx.stroke();
+    bctx.fillStyle = '#2f9e44';
+    bctx.fillRect(W * 0.90, wallH * 0.12, W * 0.055, wallH * 0.18);
+    bctx.fillStyle = '#eafbe7';
+    bctx.font = 'bold ' + (wallH * 0.11) + 'px sans-serif';
+    bctx.fillText('EXIT', W * 0.906, wallH * 0.255);
+
+    // --- floor: big tiles with slight perspective + sheen ---
+    var floorGrad = bctx.createLinearGradient(0, wallH, 0, H);
+    floorGrad.addColorStop(0, '#cfc4ae');
+    floorGrad.addColorStop(0.5, '#c2b69e');
+    floorGrad.addColorStop(1, '#a99d85');
+    bctx.fillStyle = floorGrad;
+    bctx.fillRect(0, wallH, W, H - wallH);
+    bctx.strokeStyle = 'rgba(90,80,60,0.18)';
+    bctx.lineWidth = 1;
+    var rows = 7;
+    for (var r = 0; r <= rows; r++) {
+      var t = r / rows;
+      var y = wallH + (H - wallH) * (t * t * 0.55 + t * 0.45); // denser near the wall
+      bctx.beginPath(); bctx.moveTo(0, y); bctx.lineTo(W, y); bctx.stroke();
+    }
+    for (var c = 0; c <= 10; c++) {
+      var cx = (c / 10) * W;
+      var spread = (cx - W / 2) * 0.12;
+      bctx.beginPath(); bctx.moveTo(cx, wallH); bctx.lineTo(cx + spread, H); bctx.stroke();
+    }
+    // light sheen pools on the floor under the ceiling lights
+    for (var si = 0; si < 4; si++) {
+      var sx = W * (0.14 + si * 0.24);
+      var sg = bctx.createRadialGradient(sx, H * 0.55, 8, sx, H * 0.55, W * 0.14);
+      sg.addColorStop(0, 'rgba(255,250,235,0.20)');
+      sg.addColorStop(1, 'rgba(255,250,235,0)');
+      bctx.fillStyle = sg;
+      bctx.fillRect(sx - W * 0.15, wallH, W * 0.3, H - wallH);
+    }
+
+    // --- serving counters (left): stainless front, warm food-lamp glow ---
+    [[H * 0.30, '#e8623a'], [H * 0.43, '#3a8fe8']].forEach(function (co) {
+      var cy = co[0], ch = H * 0.10;
+      // shadow
+      bctx.fillStyle = 'rgba(40,35,25,0.25)';
+      bctx.fillRect(W * 0.025, cy + ch * 0.85, W * 0.30, ch * 0.35);
+      // stainless body
+      var steel = bctx.createLinearGradient(0, cy, 0, cy + ch);
+      steel.addColorStop(0, '#d9dfe3');
+      steel.addColorStop(0.45, '#aeb8bf');
+      steel.addColorStop(0.55, '#98a3ab');
+      steel.addColorStop(1, '#c3ccd2');
+      bctx.fillStyle = steel;
+      bctx.fillRect(W * 0.02, cy, W * 0.30, ch);
+      bctx.strokeStyle = '#7d888f'; bctx.lineWidth = 1.5;
+      bctx.strokeRect(W * 0.02, cy, W * 0.30, ch);
+      // countertop
+      bctx.fillStyle = '#eef1f2';
+      bctx.fillRect(W * 0.02, cy - ch * 0.18, W * 0.30, ch * 0.22);
+      // food trays under warm lamps
+      for (var f = 0; f < 5; f++) {
+        bctx.fillStyle = f % 2 ? '#c9a23f' : co[1];
+        bctx.fillRect(W * (0.035 + f * 0.056), cy - ch * 0.13, W * 0.042, ch * 0.13);
+      }
+      // warm glow
+      var glow = bctx.createLinearGradient(0, cy - ch * 0.5, 0, cy);
+      glow.addColorStop(0, 'rgba(255,190,90,0.22)');
+      glow.addColorStop(1, 'rgba(255,190,90,0)');
+      bctx.fillStyle = glow;
+      bctx.fillRect(W * 0.02, cy - ch * 0.5, W * 0.30, ch * 0.5);
+      // tray rail
+      bctx.strokeStyle = '#8d979e'; bctx.lineWidth = 3;
+      bctx.beginPath();
+      bctx.moveTo(W * 0.02, cy + ch * 1.12); bctx.lineTo(W * 0.32, cy + ch * 1.12);
+      bctx.stroke();
     });
-    bctx.restore();
-    bctx.strokeStyle = 'rgba(0,0,0,0.06)';
-    bctx.lineWidth = 2;
-    bctx.beginPath(); bctx.moveTo(0, muralH); bctx.lineTo(W, muralH); bctx.stroke();
 
-    bctx.fillStyle = '#dfe6ea';
-    bctx.fillRect(W * 0.02, H * 0.30, W * 0.30, H * 0.10);
-    bctx.fillRect(W * 0.02, H * 0.43, W * 0.30, H * 0.10);
-    bctx.strokeStyle = '#b9c4cc';
-    bctx.lineWidth = 2;
-    bctx.strokeRect(W * 0.02, H * 0.30, W * 0.30, H * 0.10);
-    bctx.strokeRect(W * 0.02, H * 0.43, W * 0.30, H * 0.10);
-
+    // --- long tables with attached stools (typical canteen style) ---
     var tableRows = [0.42, 0.58, 0.74, 0.90];
     var tableCols = [0.40, 0.58, 0.76];
     tableRows.forEach(function (ty) {
       tableCols.forEach(function (tx) {
-        var tw = W * 0.16, th = H * 0.035;
+        var tw = W * 0.155, th = H * 0.035;
         var x = W * tx - tw / 2, y = H * ty - th / 2;
-        bctx.fillStyle = '#e7cf9d';
+        // shadow
+        bctx.fillStyle = 'rgba(40,35,25,0.22)';
+        bctx.fillRect(x - 2, y + th * 0.7, tw + 4, th * 0.9);
+        // tabletop (laminate with a lighter edge)
+        bctx.fillStyle = '#b9855a';
         bctx.fillRect(x, y, tw, th);
-        bctx.fillStyle = '#cbb27c';
-        bctx.fillRect(x, y - th * 0.9, tw, th * 0.5);
-        bctx.fillRect(x, y + th * 1.4, tw, th * 0.5);
+        bctx.fillStyle = '#d9a878';
+        bctx.fillRect(x, y, tw, th * 0.4);
+        bctx.strokeStyle = '#8a6240'; bctx.lineWidth = 1;
+        bctx.strokeRect(x, y, tw, th);
+        // round stools along both sides
+        for (var s = 0; s < 4; s++) {
+          var sxp = x + tw * (0.14 + s * 0.24);
+          [y - th * 0.75, y + th * 1.75].forEach(function (syp) {
+            bctx.fillStyle = 'rgba(40,35,25,0.2)';
+            bctx.beginPath(); bctx.ellipse(sxp + 1.5, syp + 2, th * 0.34, th * 0.26, 0, 0, Math.PI * 2); bctx.fill();
+            bctx.fillStyle = '#c2453a';
+            bctx.beginPath(); bctx.ellipse(sxp, syp, th * 0.34, th * 0.26, 0, 0, Math.PI * 2); bctx.fill();
+            bctx.fillStyle = 'rgba(255,255,255,0.25)';
+            bctx.beginPath(); bctx.ellipse(sxp - th * 0.08, syp - th * 0.06, th * 0.14, th * 0.09, 0, 0, Math.PI * 2); bctx.fill();
+          });
+        }
       });
     });
 
-    bctx.fillStyle = '#8a5b8f';
-    bctx.fillRect(W * 0.96, H * 0.30, W * 0.03, H * 0.22);
-    bctx.fillStyle = '#c78a3a';
-    bctx.fillRect(W * 0.96, H * 0.55, W * 0.03, H * 0.18);
+    // --- glass entrance doors (right) with daylight ---
+    var doorY = H * 0.30, doorH = H * 0.43;
+    var dayGrad = bctx.createLinearGradient(W * 0.955, 0, W, 0);
+    dayGrad.addColorStop(0, '#bfe0ef');
+    dayGrad.addColorStop(1, '#e9f6fc');
+    bctx.fillStyle = dayGrad;
+    bctx.fillRect(W * 0.955, doorY, W * 0.045, doorH);
+    bctx.strokeStyle = '#6e7d85'; bctx.lineWidth = 3;
+    bctx.strokeRect(W * 0.955, doorY, W * 0.045, doorH);
+    bctx.beginPath();
+    bctx.moveTo(W * 0.9775, doorY); bctx.lineTo(W * 0.9775, doorY + doorH);
+    bctx.stroke();
+    bctx.strokeStyle = '#4b565c'; bctx.lineWidth = 2;
+    bctx.beginPath();
+    bctx.moveTo(W * 0.968, doorY + doorH * 0.45); bctx.lineTo(W * 0.968, doorY + doorH * 0.6);
+    bctx.moveTo(W * 0.987, doorY + doorH * 0.45); bctx.lineTo(W * 0.987, doorY + doorH * 0.6);
+    bctx.stroke();
+    // daylight spilling onto the floor by the door
+    var spill = bctx.createRadialGradient(W * 0.975, H * 0.52, 6, W * 0.975, H * 0.52, W * 0.11);
+    spill.addColorStop(0, 'rgba(210,235,248,0.35)');
+    spill.addColorStop(1, 'rgba(210,235,248,0)');
+    bctx.fillStyle = spill;
+    bctx.fillRect(W * 0.83, wallH, W * 0.17, H - wallH);
 
-    bctx.strokeStyle = 'rgba(0,0,0,0.05)';
-    bctx.lineWidth = 1;
-    for (var gx = 0; gx <= W; gx += H * 0.08) {
-      bctx.beginPath(); bctx.moveTo(gx, muralH); bctx.lineTo(gx, H); bctx.stroke();
-    }
+    // subtle corner vignette for a camera-like feel
+    var vig = bctx.createRadialGradient(W / 2, H / 2, H * 0.45, W / 2, H / 2, H * 0.95);
+    vig.addColorStop(0, 'rgba(0,0,0,0)');
+    vig.addColorStop(1, 'rgba(20,15,10,0.28)');
+    bctx.fillStyle = vig;
+    bctx.fillRect(0, 0, W, H);
   }
   drawBaseScene();
 
@@ -1393,21 +1540,34 @@
   var frameCount = 0;
   var frameTimer = null;
 
+  var photoToggle = document.getElementById('photoToggle');
+
   function updateFooterPath() {
-    footerRight.textContent = '/var/heatmap/' + sessionFolder + '/logPicture/ · ' + frameCount + ' reference photos saved';
+    if (photoToggle.checked) {
+      footerRight.textContent = '/var/heatmap/' + sessionFolder + '/logPicture/ · ' + frameCount + ' reference photos saved';
+    } else {
+      footerRight.textContent = '/var/heatmap/' + sessionFolder + '/log/ · reference photos off · heatmapLog: one record / 5s';
+    }
   }
   updateFooterPath();
 
   function startFrameTimer(seconds) {
     if (frameTimer) clearInterval(frameTimer);
     frameTimer = setInterval(function () {
-      if (mode === 'live') {
+      if (mode === 'live' && photoToggle.checked) {
         frameCount++;
         updateFooterPath();
       }
     }, seconds * 1000);
   }
   startFrameTimer(5);
+
+  photoToggle.addEventListener('change', function () {
+    updateFooterPath();
+    showToast(photoToggle.checked
+      ? 'Reference photos ON — saving JPEGs to logPicture/'
+      : 'Reference photos OFF — heatmapLog only (saves disk space)');
+  });
 
   var captureIntervalSelect = document.getElementById('captureIntervalSelect');
   var captureIntervalVal = document.getElementById('captureIntervalVal');
@@ -1498,6 +1658,23 @@
     populateHourSelect();
     applyHourSelection();
     showToast('Window set to ' + (v === 'custom' ? 'custom range' : formatHoursLabel(hours)) + ' — heat log re-windowed');
+  });
+
+  // ---------- Environment presets ----------
+  var PRESETS = {
+    canteen:   { timeframe: '0.1667', conf: 45 },
+    lobby:     { timeframe: '0.1667', conf: 50 },
+    warehouse: { timeframe: '6',      conf: 35 }
+  };
+  Array.prototype.forEach.call(document.querySelectorAll('.preset-btn'), function (btn) {
+    btn.addEventListener('click', function () {
+      var p = PRESETS[btn.dataset.preset];
+      timeframeSelect.value = p.timeframe;
+      timeframeSelect.dispatchEvent(new Event('change'));
+      sensRange.value = p.conf;
+      sensRange.dispatchEvent(new Event('input'));
+      showToast('Applied ' + btn.dataset.preset + ' preset');
+    });
   });
 
   // ---------- Sensitivity ----------
