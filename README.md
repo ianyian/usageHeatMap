@@ -97,7 +97,9 @@ together:
 - **Detection**: nano YOLO model (YOLO11n / YOLOv8n), exported to NCNN or TFLite for
   reasonable CPU performance on a Pi; motion-gated so the model only runs when something in
   frame actually changed, rather than continuously
-- **Web UI**: Flask, serving the same Live/Replay/Settings interface prototyped in the mockup
+- **UI**: native Python rendering (not a web app) — no browser or HTTP server in the loop; the
+  same Live/Replay/Settings interface prototyped in the mockup gets drawn directly to the attached
+  screen (Pygame is the current front-runner — see `docs/technical-instructions.md`)
 
 ## Repo layout
 
