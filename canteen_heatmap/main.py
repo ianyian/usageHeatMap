@@ -6,6 +6,7 @@ the same code path serves a USB webcam on the Pi.
 """
 import argparse
 import sys
+import threading
 import time
 from collections import deque
 from pathlib import Path
@@ -62,27 +63,39 @@ class App:
         self.replay_playing = False
         self.replay_speed = REPLAY_SPEEDS[0]
 
-        print("Opening camera…", flush=True)
-        try:
-            source = video_file if video_file else settings.camera_index
-            self.camera: Optional[Camera] = Camera(source)
-        except RuntimeError as e:
-            # Run anyway: demo mode and replay work without a camera, and this
-            # keeps the Pi from crash-looping on an unplugged/blocked camera.
-            print(f"warning: {e}", file=sys.stderr, flush=True)
-            self.camera = None
-            self.ui.flash("Camera unavailable — demo/replay only")
-        print("Loading detector model…", flush=True)
-        from .detector import PersonDetector
-        self.detector = PersonDetector()
-        print("Ready.", flush=True)
-
         latest = self.store.latest_session()
         if latest is not None:
             base = self.store.resume(latest)
             if base is not None:
                 self.base_surface = cover_fit(base, self.ui.w, self.ui.h)
-                self.ui.flash(f"Resumed session {latest.name}")
+
+        # Camera open (~1s) and the YOLO model load (several seconds) run in a
+        # background thread so the window is responsive from the first frame —
+        # doing this inline froze the UI at startup and swallowed early clicks.
+        self.camera: Optional[Camera] = None
+        self.detector = None
+        self.startup_status: Optional[str] = "starting camera…"
+        self._video_file = video_file
+        threading.Thread(target=self._init_hardware, daemon=True).start()
+
+    def _init_hardware(self) -> None:
+        try:
+            source = self._video_file if self._video_file else self.settings.camera_index
+            self.camera = Camera(source)
+        except RuntimeError as e:
+            # Run anyway: demo mode and replay work without a camera, and this
+            # keeps the Pi from crash-looping on an unplugged/blocked camera.
+            print(f"warning: {e}", file=sys.stderr, flush=True)
+            self.ui.flash("Camera unavailable — demo/replay only")
+        self.startup_status = "loading detector model…"
+        from .detector import PersonDetector
+        detector = PersonDetector()
+        # Warm-up inference here, not on the UI thread — the first YOLO run is
+        # far slower than steady state and would cause one long visible stall.
+        detector.detect(np.zeros((360, 640, 3), dtype=np.uint8), 0.5)
+        self.detector = detector
+        self.startup_status = None
+        print("Ready.", flush=True)
 
     # ---------------------------------------------------------------- UI facade
 
@@ -217,7 +230,7 @@ class App:
             if self.settings.demo_mode:
                 people = self.demo.tick(self.settings.demo_min, self.settings.demo_max)
                 ran_detector = True
-            elif self.last_frame is not None and (
+            elif self.detector is not None and self.last_frame is not None and (
                 self.gate.triggered(self.last_frame)
                 or now - self._last_detect >= DETECT_HEARTBEAT_S
             ):

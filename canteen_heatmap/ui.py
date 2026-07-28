@@ -191,6 +191,12 @@ class UI:
         if app.base_surface is None:
             self._text("No base image — press B or open Settings to capture one",
                        self.font, C_TEXT, (self.w // 2, self.h // 2 - 30), "center")
+        status = getattr(app, "startup_status", None)
+        if status:
+            r = pygame.Rect(0, 0, 260, 34)
+            r.midtop = (self.w // 2, PAD + 44)
+            self._glass(r, radius=17)
+            self._text(status, self.font_sm, C_FAINT, r.center, "center")
         hint = ("B base   L live   R replay   D demo   S settings   ESC quit"
                 if app.mode == "live" else
                 "SPACE play/pause   < > keys seek 1 min   L live   ESC quit")
